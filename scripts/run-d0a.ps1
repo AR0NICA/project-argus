@@ -4,6 +4,25 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
+# Windows PowerShell 5.1 converts any native-command stderr line into a terminating
+# error when $ErrorActionPreference='Stop'. Docker/compose print normal progress
+# ("Image ... Pulling/Building", "Container ... Stopping") to stderr, so run native
+# tools with 'Continue' and judge success only by $LASTEXITCODE.
+function Invoke-Native {
+    param([Parameter(Mandatory)][scriptblock]$Command)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Command } finally { $ErrorActionPreference = $prev }
+}
+
+# Windows PowerShell 5.1 `Set-Content -Encoding utf8` prepends a UTF-8 BOM, which
+# breaks the exact byte/JSON contracts the WAS app and evidence validator enforce
+# (json.loads chokes on a leading BOM). Write evidence as UTF-8 without a BOM.
+function Write-Utf8NoBom {
+    param([Parameter(Mandatory)][string]$Path, [AllowEmptyString()][string]$Text = '')
+    [System.IO.File]::WriteAllText($Path, $Text, (New-Object System.Text.UTF8Encoding($false)))
+}
+
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw 'Runtime blocker: Docker CLI/engine is not installed or not on PATH. No stack was started.'
 }
@@ -17,18 +36,18 @@ $runDir = Join-Path $evidence $runId
 if (Test-Path -LiteralPath $runDir) { throw "Refusing to overwrite or append any existing evidence for $runId. Choose a different -RunNumber." }
 New-Item -ItemType Directory -Path $runDir | Out-Null
 $manifest = [ordered]@{ manifest_version='argus.d0a-local-run/v1'; run_id=$runId; scenario='D0A-LOCAL'; approval_state='approved'; concurrency=1; minimum_interval_seconds=1 }
-$manifest | ConvertTo-Json -Compress | Set-Content -NoNewline -Encoding utf8 (Join-Path $runDir 'run-manifest.json')
+Write-Utf8NoBom (Join-Path $runDir 'run-manifest.json') ($manifest | ConvertTo-Json -Compress)
 
 # This runner is deliberately sequential: concurrency is fixed at one and every request is separated by >= 1 second.
 try {
-    docker compose down --volumes --remove-orphans
+    Invoke-Native { docker compose down --volumes --remove-orphans }
     if ($LASTEXITCODE -ne 0) { throw "Compose cleanup before startup failed with exit code $LASTEXITCODE." }
-    docker compose up --build --detach
+    Invoke-Native { docker compose up --build --detach }
     if ($LASTEXITCODE -ne 0) { throw "Compose startup failed with exit code $LASTEXITCODE." }
-    $gatewayPort = docker compose port gateway 8080
+    $gatewayPort = Invoke-Native { docker compose port gateway 8080 }
     $gatewayPortExit = $LASTEXITCODE
     $gatewayPortText = ($gatewayPort | Out-String).Trim()
-    $gatewayPortText | Set-Content -Encoding utf8 (Join-Path $runDir 'gateway-published-port.txt')
+    Write-Utf8NoBom (Join-Path $runDir 'gateway-published-port.txt') $gatewayPortText
     if ($gatewayPortExit -ne 0 -or $gatewayPortText -notmatch '(^|\s)127\.0\.0\.1:18080\s*$') {
         throw "Gateway published-port assertion failed; expected 127.0.0.1:18080, observed '$gatewayPortText'."
     }
@@ -38,9 +57,9 @@ try {
         seed_sha256 = (Get-FileHash mysql/init.sql -Algorithm SHA256).Hash.ToLowerInvariant()
         event_schema_sha256 = (Get-FileHash schemas/event-v1.json -Algorithm SHA256).Hash.ToLowerInvariant()
         hybridnb_schema_sha256 = (Get-FileHash schemas/hybridnb-request-envelope-v1.json -Algorithm SHA256).Hash.ToLowerInvariant()
-        compose_images = (docker compose images --format json | Out-String).Trim()
+        compose_images = (Invoke-Native { docker compose images --format json } | Out-String).Trim()
     }
-    $provenance | ConvertTo-Json -Depth 3 | Set-Content -Encoding utf8 (Join-Path $runDir 'provenance.json')
+    Write-Utf8NoBom (Join-Path $runDir 'provenance.json') ($provenance | ConvertTo-Json -Depth 3)
     $deadline = (Get-Date).AddSeconds(90)
     $health = $null
     $lastHealthError = $null
@@ -56,7 +75,7 @@ try {
         Start-Sleep -Seconds 2
     }
     if ($null -eq $health -or $health.StatusCode -ne 200) {
-        $lastHealthError | Set-Content -Encoding utf8 (Join-Path $runDir 'gateway-health-last-error.txt')
+        Write-Utf8NoBom (Join-Path $runDir 'gateway-health-last-error.txt') ([string]$lastHealthError)
         throw 'Gateway health check did not become ready within 90 seconds.'
     }
     $last = [DateTime]::MinValue
@@ -76,7 +95,8 @@ try {
     if ($bad.Status -ne 400) { throw "invalid run_id was not rejected: HTTP $($bad.Status)" }
     $unauth = Invoke-D0Post '/admin/marker' @{run_id=$runId;fixture_id='ATK-S04-MARKER-01';action='write_fixed_marker';upload_ticket_id='missing'} @{ 'X-ARGUS-Run-Id'=$runId; 'X-ARGUS-Request-Id'=($runId + '-NOAUTH') }
     if ($unauth.Status -ne 401) { throw "unauthenticated marker was not rejected: HTTP $($unauth.Status)" }
-    python scripts/validate_evidence.py --evidence-root evidence --run-id $runId
+    Invoke-Native { python scripts/validate_evidence.py --evidence-root evidence --run-id $runId }
+    if ($LASTEXITCODE -ne 0) { throw "Evidence validation failed with exit code $LASTEXITCODE." }
     Write-Host "D0A scenario passed: $runId"
 }
 catch {
@@ -85,11 +105,11 @@ catch {
         failure_time_utc = (Get-Date).ToUniversalTime().ToString('o')
         error = $_.Exception.Message
     }
-    $failure | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $runDir 'failure.json')
-    (docker compose ps --format json 2>&1 | Out-String) | Set-Content -Encoding utf8 (Join-Path $runDir 'compose-ps.txt')
-    (docker compose logs --no-color --timestamps gateway web was db 2>&1 | Out-String) | Set-Content -Encoding utf8 (Join-Path $runDir 'compose-logs.txt')
+    Write-Utf8NoBom (Join-Path $runDir 'failure.json') ($failure | ConvertTo-Json)
+    Write-Utf8NoBom (Join-Path $runDir 'compose-ps.txt') (Invoke-Native { docker compose ps --format json } | Out-String)
+    Write-Utf8NoBom (Join-Path $runDir 'compose-logs.txt') (Invoke-Native { docker compose logs --no-color --timestamps gateway web was db } | Out-String)
     throw
 }
 finally {
-    docker compose down --volumes --remove-orphans
+    Invoke-Native { docker compose down --volumes --remove-orphans }
 }
