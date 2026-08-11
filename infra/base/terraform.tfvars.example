@@ -13,8 +13,6 @@ allowed_account_ids = []
 availability_zones  = []
 allowed_test_cidrs  = []
 
-evidence_bucket_name       = ""
-alb_access_log_bucket_name = ""
 evidence_retention_in_days = 30
 
 tls_certificate_arn = ""

@@ -19,6 +19,10 @@ locals {
   evidence_enabled    = local.phase_rank[var.deployment_phase] >= 2
   substrate_enabled   = local.phase_rank[var.deployment_phase] >= 3
   attachments_enabled = local.phase_rank[var.deployment_phase] >= 4
+  bucket_account_id   = length(var.allowed_account_ids) == 1 ? var.allowed_account_ids[0] : "000000000000"
+
+  evidence_bucket_name       = "${local.name_prefix}-d1-evidence-${var.aws_region}-${local.bucket_account_id}"
+  alb_access_log_bucket_name = "${local.name_prefix}-alb-access-${var.aws_region}-${local.bucket_account_id}"
 }
 
 resource "terraform_data" "d0_guard" {
@@ -35,8 +39,12 @@ resource "terraform_data" "d0_guard" {
       error_message = "network phase requires one account ID, two AZs, and at least one approved test CIDR."
     }
     precondition {
-      condition     = !local.evidence_enabled || (var.evidence_bucket_name != "" && var.alb_access_log_bucket_name != "")
-      error_message = "evidence phase requires frozen evidence and ALB access-log bucket names."
+      condition = !local.evidence_enabled || (
+        local.evidence_bucket_name != local.alb_access_log_bucket_name &&
+        length(local.evidence_bucket_name) <= 63 &&
+        length(local.alb_access_log_bucket_name) <= 63
+      )
+      error_message = "evidence phase requires distinct code-derived evidence and ALB access-log bucket names."
     }
     precondition {
       condition     = !local.substrate_enabled || (var.tls_certificate_arn != "" && var.web_ami_id != "" && var.was_ami_id != "" && var.canary_bucket_name != "" && (!var.enable_budget || var.budget_alert_email != ""))
@@ -107,8 +115,8 @@ module "observability" {
   name_prefix                     = local.name_prefix
   aws_account_id                  = var.allowed_account_ids[0]
   vpc_id                          = module.network[0].vpc_id
-  evidence_bucket_name            = var.evidence_bucket_name
-  alb_access_log_bucket_name      = var.alb_access_log_bucket_name
+  evidence_bucket_name            = local.evidence_bucket_name
+  alb_access_log_bucket_name      = local.alb_access_log_bucket_name
   retention_in_days               = var.evidence_retention_in_days
   enable_s3_getobject_data_events = local.attachments_enabled
   enable_vpc_flow_logs            = true

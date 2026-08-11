@@ -18,6 +18,13 @@ output "state_key_example" {
   value = "argus/hardened/terraform.tfstate"
 }
 
+output "frozen_observability_bucket_names" {
+  value = local.network_enabled ? {
+    evidence        = local.evidence_bucket_name
+    alb_access_logs = local.alb_access_log_bucket_name
+  } : null
+}
+
 output "vpc_id" {
   value = try(module.network[0].vpc_id, null)
 }

@@ -12,6 +12,24 @@ deployment configuration and must not be applied with placeholder values.
 - HARDENED is never an in-place mutation of BASE.
 - Per-control `argus/control/<control-id>` roots are deferred to D6.
 
+## Frozen observability bucket names
+
+The D1 evidence and ALB access-log bucket names are derived in each root from
+the environment prefix, AWS region, and the single approved AWS account ID:
+
+```text
+argus-base-d1-evidence-<region>-<account-id>
+argus-base-alb-access-<region>-<account-id>
+argus-hardened-d1-evidence-<region>-<account-id>
+argus-hardened-alb-access-<region>-<account-id>
+```
+
+They are not deployment inputs. This keeps BASE and HARDENED distinct across
+separate states and gives every operator the same names. Changing this formula
+is an explicit bucket migration and requires a reviewed state-aware plan. The
+later canary bucket remains a separate substrate input and is not part of this
+D1 naming contract.
+
 ## Frozen deployment order
 
 1. State and safety guards.

@@ -6,8 +6,22 @@ variable "vpc_id" {
   type    = string
   default = ""
 }
-variable "evidence_bucket_name" { type = string }
-variable "alb_access_log_bucket_name" { type = string }
+variable "evidence_bucket_name" {
+  type = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.evidence_bucket_name))
+    error_message = "evidence_bucket_name must be a 3-63 character lowercase S3 bucket name using letters, digits, and hyphens."
+  }
+}
+variable "alb_access_log_bucket_name" {
+  type = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.alb_access_log_bucket_name))
+    error_message = "alb_access_log_bucket_name must be a 3-63 character lowercase S3 bucket name using letters, digits, and hyphens."
+  }
+}
 variable "alb_access_log_prefix" {
   type    = string
   default = "alb"

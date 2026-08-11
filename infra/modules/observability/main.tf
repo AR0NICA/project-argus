@@ -1,3 +1,17 @@
+resource "terraform_data" "bucket_name_contract" {
+  input = {
+    evidence        = var.evidence_bucket_name
+    alb_access_logs = var.alb_access_log_bucket_name
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.evidence_bucket_name != var.alb_access_log_bucket_name
+      error_message = "Evidence and ALB access-log buckets must use distinct frozen names."
+    }
+  }
+}
+
 data "aws_iam_policy_document" "evidence_kms" {
   statement {
     sid       = "EnableAccountKeyAdministration"
@@ -43,6 +57,8 @@ resource "aws_s3_bucket" "evidence" {
   bucket        = var.evidence_bucket_name
   force_destroy = false
   tags          = local.common_tags
+
+  depends_on = [terraform_data.bucket_name_contract]
 }
 
 resource "aws_s3_bucket_public_access_block" "evidence" {
@@ -146,6 +162,8 @@ resource "aws_s3_bucket" "alb_access" {
   bucket        = var.alb_access_log_bucket_name
   force_destroy = false
   tags          = merge(local.common_tags, { Purpose = "alb-access-log-delivery" })
+
+  depends_on = [terraform_data.bucket_name_contract]
 }
 
 resource "aws_s3_bucket_public_access_block" "alb_access" {

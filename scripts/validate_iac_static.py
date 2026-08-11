@@ -29,6 +29,8 @@ def main():
     hardened_main = read("infra/hardened/main.tf")
     base_vars = read("infra/base/variables.tf")
     hardened_vars = read("infra/hardened/variables.tf")
+    base_tfvars = read("infra/base/terraform.tfvars.example")
+    hardened_tfvars = read("infra/hardened/terraform.tfvars.example")
     network = read("infra/modules/network/main.tf")
     observability = read("infra/modules/observability/main.tf")
     data = read("infra/modules/data/main.tf")
@@ -41,6 +43,31 @@ def main():
     require(hardened_main, 'name_prefix = "argus-hardened"', "HARDENED name prefix")
     if variable_names(base_vars) != variable_names(hardened_vars):
         raise AssertionError("BASE and HARDENED input contracts differ")
+    for variable_name in ("evidence_bucket_name", "alb_access_log_bucket_name"):
+        if variable_name in variable_names(base_vars) or variable_name in variable_names(hardened_vars):
+            raise AssertionError(f"frozen bucket name remains a root input: {variable_name}")
+        if variable_name in base_tfvars or variable_name in hardened_tfvars:
+            raise AssertionError(f"frozen bucket name remains in a tfvars example: {variable_name}")
+    require(
+        base_main,
+        'evidence_bucket_name       = "${local.name_prefix}-d1-evidence-${var.aws_region}-${local.bucket_account_id}"',
+        "frozen BASE evidence bucket formula",
+    )
+    require(
+        base_main,
+        'alb_access_log_bucket_name = "${local.name_prefix}-alb-access-${var.aws_region}-${local.bucket_account_id}"',
+        "frozen BASE ALB bucket formula",
+    )
+    require(
+        hardened_main,
+        'evidence_bucket_name       = "${local.name_prefix}-d1-evidence-${var.aws_region}-${local.bucket_account_id}"',
+        "frozen HARDENED evidence bucket formula",
+    )
+    require(
+        hardened_main,
+        'alb_access_log_bucket_name = "${local.name_prefix}-alb-access-${var.aws_region}-${local.bucket_account_id}"',
+        "frozen HARDENED ALB bucket formula",
+    )
 
     for cidr in (
         "10.20.0.0/16",
@@ -63,6 +90,7 @@ def main():
     require(observability, 'resource "aws_cloudtrail" "d1"', "CloudTrail foundation")
     require(observability, 'resource "aws_s3_bucket" "evidence"', "CloudTrail evidence bucket")
     require(observability, 'resource "aws_s3_bucket" "alb_access"', "ALB access-log bucket")
+    require(observability, 'resource "terraform_data" "bucket_name_contract"', "distinct frozen bucket contract")
     require(observability, 'enable_log_file_validation    = true', "CloudTrail validation")
     require(observability, 'equals = ["GetObject"]', "scoped S3 GetObject selector")
     require(observability, 'traffic_type         = "ALL"', "VPC Flow Logs ALL")

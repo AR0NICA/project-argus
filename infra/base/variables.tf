@@ -36,6 +36,11 @@ variable "aws_region" {
 variable "allowed_account_ids" {
   type    = list(string)
   default = []
+
+  validation {
+    condition     = length(var.allowed_account_ids) <= 1 && alltrue([for account_id in var.allowed_account_ids : can(regex("^[0-9]{12}$", account_id))])
+    error_message = "allowed_account_ids must contain at most one 12-digit AWS account ID."
+  }
 }
 
 variable "availability_zones" {
@@ -94,16 +99,6 @@ variable "canary_object_key" {
 }
 
 variable "canary_object_version_id" {
-  type    = string
-  default = ""
-}
-
-variable "evidence_bucket_name" {
-  type    = string
-  default = ""
-}
-
-variable "alb_access_log_bucket_name" {
   type    = string
   default = ""
 }
