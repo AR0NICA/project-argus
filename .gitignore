@@ -6,8 +6,9 @@ evidence/
 *.pem
 *.key
 
-# Local-only session context notes (may contain account IDs / IPs)
+# Local-only session context / guidance notes (may contain account IDs / IPs)
 PROJECT_CONTEXT.md
+CLAUDE.md
 
 # Python and editor by-products
 __pycache__/
