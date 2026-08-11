@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Approved D0A local run manifest",
+  "type": "object",
+  "required": ["manifest_version", "run_id", "scenario", "approval_state", "concurrency", "minimum_interval_seconds"],
+  "properties": {
+    "manifest_version": {"const": "argus.d0a-local-run/v1"},
+    "run_id": {"pattern": "^ARGUS-[0-9]{8}-LOCAL-R[0-9]{2}$"},
+    "scenario": {"const": "D0A-LOCAL"},
+    "approval_state": {"const": "approved"},
+    "concurrency": {"const": 1},
+    "minimum_interval_seconds": {"const": 1}
+  },
+  "additionalProperties": false
+}

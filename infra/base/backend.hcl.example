@@ -1,0 +1,6 @@
+# Copy to backend.hcl after D0 freezes the state bucket and lock configuration.
+bucket         = "TODO-argus-terraform-state"
+key            = "argus/base/terraform.tfstate"
+region         = "ap-northeast-2"
+encrypt        = true
+use_lockfile   = true

@@ -1,0 +1,11 @@
+variable "name_prefix" { type = string }
+variable "vpc_id" { type = string }
+variable "edge_subnet_ids" { type = list(string) }
+variable "alb_security_group_id" { type = string }
+variable "certificate_arn" { type = string }
+variable "web_port" { type = number }
+variable "health_check_path" { type = string }
+variable "enable_deletion_protection" { type = bool }
+variable "access_log_bucket_name" { type = string }
+variable "access_log_prefix" { type = string }
+variable "tags" { type = map(string) }

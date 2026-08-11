@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://argus.local/schema/d1-evidence-manifest-v2.json",
+  "title": "ARGUS D1 benign native-correlation evidence manifest",
+  "type": "object",
+  "required": ["schema_version", "run_id", "fixture_id", "proof_kind", "run_window", "application_request_id", "planned_sources", "records"],
+  "properties": {
+    "schema_version": {"const": "argus.d1-evidence-manifest/v2"},
+    "run_id": {"pattern": "^ARGUS-[0-9]{8}-BASE-R[0-9]{2}$"},
+    "fixture_id": {"pattern": "^BEN-[A-Z0-9-]+$"},
+    "proof_kind": {"enum": ["plan", "runtime"]},
+    "run_window": {"type": "object", "required": ["start_utc", "end_utc"], "properties": {"start_utc": {"type": "string", "format": "date-time"}, "end_utc": {"type": "string", "format": "date-time"}}, "additionalProperties": false},
+    "application_request_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "planned_sources": {"type": "array", "minItems": 10, "maxItems": 10, "uniqueItems": true, "items": {"enum": ["alb", "nginx_modsecurity", "d0_envelope", "web", "was", "host", "flow_logs", "cloudtrail", "s3_getobject", "rds"]}},
+    "records": {"type": "array", "maxItems": 10, "items": {"$ref": "#/$defs/runtime_record"}}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "anchor_string": {"type": "string", "minLength": 1},
+    "anchor_integer": {"type": "integer", "minimum": 0},
+    "runtime_record": {
+      "type": "object",
+      "required": ["source", "event_time_utc", "evidence_path", "content_sha256", "collector", "redaction_status", "evidence_kind", "anchors"],
+      "properties": {
+        "source": {"enum": ["alb", "nginx_modsecurity", "d0_envelope", "web", "was", "host", "flow_logs", "cloudtrail", "s3_getobject", "rds"]},
+        "event_time_utc": {"type": "string", "format": "date-time"},
+        "evidence_path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*\\.\\.).+$"},
+        "content_sha256": {"pattern": "^[a-f0-9]{64}$"},
+        "collector": {"type": "string", "minLength": 1},
+        "redaction_status": {"type": "string", "minLength": 1},
+        "evidence_kind": {"enum": ["alb_access_log", "nginx_modsecurity_log", "hybridnb_envelope_v1", "web_application_log", "was_application_log", "host_audit_log", "vpc_flow_log", "cloudtrail_management_event", "cloudtrail_s3_data_event", "rds_database_log"]},
+        "anchors": {"type": "object"},
+        "scope": {"const": "scoped_getobject"}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {"if": {"properties": {"source": {"const": "alb"}}, "required": ["source"]}, "then": {"properties": {"evidence_kind": {"const": "alb_access_log"}, "anchors": {"$ref": "#/$defs/alb_anchors"}}}},
+        {"if": {"properties": {"source": {"const": "nginx_modsecurity"}}, "required": ["source"]}, "then": {"properties": {"evidence_kind": {"const": "nginx_modsecurity_log"}, "anchors": {"$ref": "#/$defs/nginx_anchors"}}}},
+        {"if": {"properties": {"source": {"const": "d0_envelope"}}, "required": ["source"]}, "then": {"properties": {"evidence_kind": {"const": "hybridnb_envelope_v1"}, "anchors": {"$ref": "#/$defs/d0_anchors"}}}},
+        {"if": {"properties": {"source": {"const": "web"}}, "required": ["source"]}, "then": {"properties": {"evidence_kind": {"const": "web_application_log"}, "anchors": {"$ref": "#/$defs/web_anchors"}}}},
+        {"if": {"properties": {"source": {"const": "was"}}, "required": ["source"]}, "then": {"properties": {"evidence_kind": {"const": "was_application_log"}, "anchors": {"$ref": "#/$defs/was_anchors"}}}},
+        {"if": {"properties": {"source": {"const": "host"}}, "required": ["source"]}, "then": {"properties": {"evidence_kind": {"const": "host_audit_log"}, "anchors": {"$ref": "#/$defs/host_anchors"}}}},
+        {"if": {"properties": {"source": {"const": "flow_logs"}}, "required": ["source"]}, "then": {"properties": {"evidence_kind": {"const": "vpc_flow_log"}, "anchors": {"$ref": "#/$defs/flow_anchors"}}}},
+        {"if": {"properties": {"source": {"const": "cloudtrail"}}, "required": ["source"]}, "then": {"properties": {"evidence_kind": {"const": "cloudtrail_management_event"}, "anchors": {"$ref": "#/$defs/cloudtrail_anchors"}}}},
+        {"if": {"properties": {"source": {"const": "s3_getobject"}}, "required": ["source"]}, "then": {"required": ["scope"], "properties": {"evidence_kind": {"const": "cloudtrail_s3_data_event"}, "anchors": {"$ref": "#/$defs/s3_anchors"}}}},
+        {"if": {"properties": {"source": {"const": "rds"}}, "required": ["source"]}, "then": {"properties": {"evidence_kind": {"const": "rds_database_log"}, "anchors": {"$ref": "#/$defs/rds_anchors"}}}}
+      ]
+    },
+    "alb_anchors": {"type": "object", "required": ["trace_id", "request_anchor", "path"], "properties": {"trace_id": {"$ref": "#/$defs/anchor_string"}, "request_anchor": {"$ref": "#/$defs/anchor_string"}, "path": {"$ref": "#/$defs/anchor_string"}}, "additionalProperties": false},
+    "nginx_anchors": {"type": "object", "required": ["run_id", "request_id", "transaction_id"], "properties": {"run_id": {"$ref": "#/$defs/anchor_string"}, "request_id": {"$ref": "#/$defs/anchor_string"}, "transaction_id": {"$ref": "#/$defs/anchor_string"}}, "additionalProperties": false},
+    "d0_anchors": {"type": "object", "required": ["run_id", "request_id", "body_sha256"], "properties": {"run_id": {"$ref": "#/$defs/anchor_string"}, "request_id": {"$ref": "#/$defs/anchor_string"}, "body_sha256": {"pattern": "^[a-f0-9]{64}$"}}, "additionalProperties": false},
+    "web_anchors": {"type": "object", "required": ["run_id", "request_id", "session_hash"], "properties": {"run_id": {"$ref": "#/$defs/anchor_string"}, "request_id": {"$ref": "#/$defs/anchor_string"}, "session_hash": {"$ref": "#/$defs/anchor_string"}}, "additionalProperties": false},
+    "was_anchors": {"type": "object", "required": ["run_id", "request_id", "service_request_id"], "properties": {"run_id": {"$ref": "#/$defs/anchor_string"}, "request_id": {"$ref": "#/$defs/anchor_string"}, "service_request_id": {"$ref": "#/$defs/anchor_string"}}, "additionalProperties": false},
+    "host_anchors": {"type": "object", "required": ["host_id", "process", "pid", "audit_epoch", "audit_serial"], "properties": {"host_id": {"$ref": "#/$defs/anchor_string"}, "process": {"$ref": "#/$defs/anchor_string"}, "pid": {"$ref": "#/$defs/anchor_integer"}, "audit_epoch": {"$ref": "#/$defs/anchor_integer"}, "audit_serial": {"$ref": "#/$defs/anchor_integer"}}, "additionalProperties": false},
+    "flow_anchors": {"type": "object", "required": ["eni_id", "srcaddr", "dstaddr", "srcport", "dstport", "protocol", "start_epoch", "end_epoch"], "properties": {"eni_id": {"$ref": "#/$defs/anchor_string"}, "srcaddr": {"$ref": "#/$defs/anchor_string"}, "dstaddr": {"$ref": "#/$defs/anchor_string"}, "srcport": {"$ref": "#/$defs/anchor_integer"}, "dstport": {"$ref": "#/$defs/anchor_integer"}, "protocol": {"$ref": "#/$defs/anchor_integer"}, "start_epoch": {"$ref": "#/$defs/anchor_integer"}, "end_epoch": {"$ref": "#/$defs/anchor_integer"}}, "additionalProperties": false},
+    "cloudtrail_anchors": {"type": "object", "required": ["event_id", "aws_request_id", "event_name", "resource", "principal"], "properties": {"event_id": {"$ref": "#/$defs/anchor_string"}, "aws_request_id": {"$ref": "#/$defs/anchor_string"}, "event_name": {"$ref": "#/$defs/anchor_string"}, "resource": {"$ref": "#/$defs/anchor_string"}, "principal": {"$ref": "#/$defs/anchor_string"}}, "additionalProperties": false},
+    "s3_anchors": {"type": "object", "required": ["event_id", "aws_request_id", "event_name", "bucket", "key", "version_id", "principal"], "properties": {"event_id": {"$ref": "#/$defs/anchor_string"}, "aws_request_id": {"$ref": "#/$defs/anchor_string"}, "event_name": {"const": "GetObject"}, "bucket": {"$ref": "#/$defs/anchor_string"}, "key": {"$ref": "#/$defs/anchor_string"}, "version_id": {"$ref": "#/$defs/anchor_string"}, "principal": {"$ref": "#/$defs/anchor_string"}}, "additionalProperties": false},
+    "rds_anchors": {"type": "object", "required": ["db_instance", "connection_id", "query_id"], "properties": {"db_instance": {"$ref": "#/$defs/anchor_string"}, "connection_id": {"$ref": "#/$defs/anchor_integer"}, "query_id": {"$ref": "#/$defs/anchor_string"}}, "additionalProperties": false}
+  }
+}

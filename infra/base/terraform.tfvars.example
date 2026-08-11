@@ -1,0 +1,35 @@
+# Copy to terraform.tfvars and replace every TODO before advancing a phase.
+# Keep BASE and HARDENED fixture/source inputs identical, but use distinct names.
+deployment_phase = "disabled"
+aws_region      = "ap-northeast-2"
+
+# Default is protected. A reviewed teardown plan must set authorized=true and
+# select final_snapshot with a unique per-run name or skip_final_snapshot.
+teardown_authorized                = false
+teardown_mode                      = "protected"
+teardown_final_snapshot_identifier = ""
+
+allowed_account_ids = []
+availability_zones  = []
+allowed_test_cidrs  = []
+
+evidence_bucket_name       = ""
+alb_access_log_bucket_name = ""
+evidence_retention_in_days = 30
+
+tls_certificate_arn = ""
+web_ami_id           = ""
+was_ami_id           = ""
+web_instance_type    = "t3.small"
+was_instance_type    = "t3.small"
+
+rds_instance_class      = "db.t3.micro"
+rds_allocated_storage   = 20
+canary_bucket_name      = ""
+canary_object_key       = "canary/was-bundle.json"
+canary_object_version_id = ""
+
+enable_budget      = false
+monthly_limit_usd  = 25
+budget_alert_email = ""
+owner              = "TODO"

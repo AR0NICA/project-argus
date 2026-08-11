@@ -1,0 +1,5 @@
+bucket = "TODO-argus-terraform-state"
+key = "argus/hardened/terraform.tfstate"
+region = "ap-northeast-2"
+encrypt = true
+use_lockfile = true

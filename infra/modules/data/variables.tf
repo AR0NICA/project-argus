@@ -1,0 +1,11 @@
+variable "name_prefix" { type = string }
+variable "data_subnet_ids" { type = list(string) }
+variable "rds_security_group_id" { type = string }
+variable "instance_class" { type = string }
+variable "allocated_storage" { type = number }
+variable "backup_retention_days" { type = number }
+variable "deletion_protection" { type = bool }
+variable "skip_final_snapshot" { type = bool }
+variable "final_snapshot_identifier" { type = string }
+variable "native_log_retention_in_days" { type = number }
+variable "tags" { type = map(string) }

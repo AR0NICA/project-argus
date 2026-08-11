@@ -1,0 +1,89 @@
+name: argus-d0a-local
+
+services:
+  gateway:
+    build: ./services/gateway
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - ${EVIDENCE_DIR:-./evidence}:/evidence
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+    networks: [ingress, edge]
+
+  web:
+    build: ./services/web
+    environment:
+      WAS_URL: http://was:8081
+      EVIDENCE_ROOT: /evidence
+    depends_on:
+      was:
+        condition: service_healthy
+    volumes:
+      - ${EVIDENCE_DIR:-./evidence}:/evidence
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    networks: [edge, app]
+
+  was:
+    build: ./services/was
+    environment:
+      EVIDENCE_ROOT: /evidence
+      DB_HOST: db
+      DB_NAME: ${MYSQL_DATABASE:-argus_synthetic}
+      DB_USER: argus_auth_reader
+      DB_PASSWORD: argus_auth_reader_local_only
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ${EVIDENCE_DIR:-./evidence}:/evidence
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health', timeout=2)"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    networks: [app, data]
+
+  db:
+    image: mysql:8.4@sha256:8dbcf531a03aade657e181b9cf2f1d1803ce621a1d55610cb44cb531ab7d7db6
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-argus_synthetic}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-argus_root_local_only}
+    command: ["--skip-log-bin", "--max-connections=20"]
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/001-synthetic.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [data]
+
+networks:
+  ingress:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
+  edge:
+    internal: true
+  app:
+    internal: true
+  data:
+    internal: true
+
+volumes:
+  db_data:

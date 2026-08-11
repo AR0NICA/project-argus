@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://argus.local/schema/event-v1.json",
+  "title": "ARGUS D0A local evidence event",
+  "type": "object",
+  "required": ["schema_version", "evidence_id", "event_time_utc", "run_id", "stage_id", "event_type", "request_id", "result", "source_ref", "target_ref", "action", "fixture_or_resource_id", "content_sha256", "collector", "reviewer", "redaction_status", "secret_material_present"],
+  "properties": {
+    "schema_version": {"const": "argus.event/v1"},
+    "evidence_id": {"type": "string", "pattern": "^ARGUS-[0-9]{8}-LOCAL-R[0-9]{2}-S0[234]-E[0-9]{2}$"},
+    "event_time_utc": {"type": "string", "format": "date-time"},
+    "run_id": {"type": "string", "pattern": "^ARGUS-[0-9]{8}-LOCAL-R[0-9]{2}$"},
+    "stage_id": {"enum": ["S02", "S03", "S04"]},
+    "event_type": {"type": "string", "maxLength": 96},
+    "request_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "fixture_id": {"type": "string", "maxLength": 96},
+    "result": {"enum": ["accepted", "authorized", "rejected", "not_evaluated", "written"]},
+    "original_request_envelope": {"type": "object"},
+    "response_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "correlation": {"type": "object"}
+    ,"source_ref": {"type": "string"}
+    ,"target_ref": {"type": "string"}
+    ,"action": {"type": "string"}
+    ,"fixture_or_resource_id": {"type": "string"}
+    ,"content_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+    ,"collector": {"type": ["string", "null"]}
+    ,"reviewer": {"type": ["string", "null"]}
+    ,"redaction_status": {"type": "string"}
+    ,"secret_material_present": {"const": false}
+  },
+  "additionalProperties": true
+}

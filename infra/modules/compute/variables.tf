@@ -1,0 +1,14 @@
+variable "name_prefix" { type = string }
+variable "web_ami_id" { type = string }
+variable "was_ami_id" { type = string }
+variable "web_instance_type" { type = string }
+variable "was_instance_type" { type = string }
+variable "web_subnet_id" { type = string }
+variable "was_subnet_id" { type = string }
+variable "web_security_group_id" { type = string }
+variable "was_security_group_id" { type = string }
+variable "web_target_group_arn" { type = string }
+variable "web_port" { type = number }
+variable "web_log_group_arns" { type = list(string) }
+variable "was_log_group_arns" { type = list(string) }
+variable "tags" { type = map(string) }

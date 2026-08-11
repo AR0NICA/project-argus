@@ -1,0 +1,28 @@
+# Generated evidence is intentionally retained locally but never committed.
+evidence/
+*.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python and editor by-products
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.vscode/
+
+# Terraform local state, plans, and backend material
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.json
+crash.log
+crash.*.log
+backend.hcl
+*.tfvars
+*.auto.tfvars
+*.tfvars.json
+*.auto.tfvars.json
+!*.tfvars.example

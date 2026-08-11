@@ -1,0 +1,26 @@
+{
+  "manifest_version": "argus.d0a.fixture/v1",
+  "lab_boundary": "localhost-only, authorized, isolated, synthetic, non-destructive",
+  "synthetic_row_count": 3,
+  "fixtures": [
+    {
+      "fixture_id": "ATK-S02-SYNTH-AUTH-01",
+      "stage": "S02",
+      "purpose": "fixed controlled SQLi-class authentication fixture",
+      "request_contract": {
+        "probe": "fixture-token-v1",
+        "external_sql_text": "not accepted",
+        "max_request_bytes": 32768
+      },
+      "expected_principal": "synthetic_admin",
+      "expected_role": "administrator"
+    },
+    {
+      "fixture_id": "ATK-S04-MARKER-01",
+      "stage": "S04",
+      "purpose": "administrator-only fixed marker operation",
+      "fixed_action": "write one bounded marker JSON record to the task-local evidence volume",
+      "forbidden": ["commands", "uploads", "webshells", "reverse shells", "credential extraction", "C2", "external targets", "delete APIs"]
+    }
+  ]
+}
