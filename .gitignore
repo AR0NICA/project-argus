@@ -6,6 +6,9 @@ evidence/
 *.pem
 *.key
 
+# Local-only session context notes (may contain account IDs / IPs)
+PROJECT_CONTEXT.md
+
 # Python and editor by-products
 __pycache__/
 *.py[cod]
@@ -26,3 +29,4 @@ backend.hcl
 *.tfvars.json
 *.auto.tfvars.json
 !*.tfvars.example
+
