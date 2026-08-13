@@ -1,0 +1,72 @@
+name: argus-d1-base
+
+services:
+  gateway:
+    image: ${ARGUS_GATEWAY_IMAGE:?set_a_private_ecr_digest}
+    pull_policy: always
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - ${D1_EVIDENCE_DIR:-/var/lib/argus/d1/evidence}:/evidence
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+    networks: [edge]
+    restart: unless-stopped
+
+  web:
+    image: ${ARGUS_WEB_IMAGE:?set_a_private_ecr_digest}
+    pull_policy: always
+    environment:
+      WAS_URL: http://was:8081
+      AWS_REGION: ${AWS_REGION:?set_aws_region}
+      D1_S3_BUCKET: ${D1_S3_BUCKET:?set_exact_bucket}
+      D1_S3_KEY: ${D1_S3_KEY:?set_exact_key}
+      D1_S3_OBJECT_VERSION_ID: ${D1_S3_OBJECT_VERSION_ID:?set_exact_version_id}
+      D1_SSM_SENTINEL_PARAMETER_NAME: ${D1_SSM_SENTINEL_PARAMETER_NAME:?set_sentinel_name}
+    depends_on:
+      was:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ${D1_APP_LOG_DIR:-/var/log/argus/d1}:/var/log/argus
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+      interval: 10s
+      timeout: 2s
+      retries: 6
+    networks: [edge, app]
+    restart: unless-stopped
+
+  was:
+    image: ${ARGUS_WAS_IMAGE:?set_a_private_ecr_digest}
+    pull_policy: always
+    environment:
+      DB_HOST: ${MYSQL_HOST:?set_private_database_host}
+      DB_NAME: ${MYSQL_DATABASE:-argus_synthetic}
+      DB_USER: ${MYSQL_D1_USER:-argus_d1_reader}
+      DB_PASSWORD_FILE: /run/secrets/argus-d1-db-password
+    volumes:
+      - ${D1_AUDIT_MARKER_DIR:-/var/lib/argus/d1/audit}:/var/lib/argus/d1/audit
+      - ${D1_APP_LOG_DIR:-/var/log/argus/d1}:/var/log/argus
+      - ${MYSQL_D1_PASSWORD_FILE:?set_protected_database_password_file}:/run/secrets/argus-d1-db-password:ro
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health', timeout=2)"]
+      interval: 10s
+      timeout: 2s
+      retries: 6
+    networks: [app]
+    restart: unless-stopped
+
+networks:
+  edge:
+    internal: true
+  app:
+    internal: true

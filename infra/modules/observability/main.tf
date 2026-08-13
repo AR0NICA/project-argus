@@ -288,13 +288,14 @@ resource "aws_iam_role_policy" "flow" {
 }
 
 resource "aws_flow_log" "vpc" {
-  count                = var.enable_vpc_flow_logs ? 1 : 0
-  log_destination_type = "cloud-watch-logs"
-  log_destination      = aws_cloudwatch_log_group.source["vpc_flow"].arn
-  iam_role_arn         = aws_iam_role.flow.arn
-  traffic_type         = "ALL"
-  vpc_id               = var.vpc_id
-  tags                 = merge(local.common_tags, { Source = "vpc-flow" })
+  count                    = var.enable_vpc_flow_logs ? 1 : 0
+  log_destination_type     = "cloud-watch-logs"
+  log_destination          = aws_cloudwatch_log_group.source["vpc_flow"].arn
+  iam_role_arn             = aws_iam_role.flow.arn
+  traffic_type             = "ALL"
+  max_aggregation_interval = 60
+  vpc_id                   = var.vpc_id
+  tags                     = merge(local.common_tags, { Source = "vpc-flow" })
 }
 
 resource "aws_cloudtrail" "d1" {

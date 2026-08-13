@@ -21,12 +21,12 @@ def source_anchors(manifest):
         "nginx_modsecurity": {"run_id": run_id, "request_id": request_id, "transaction_id": "nginx-tx-0001"},
         "d0_envelope": {"run_id": run_id, "request_id": request_id, "body_sha256": "a" * 64},
         "web": {"run_id": run_id, "request_id": request_id, "session_hash": "b" * 64},
-        "was": {"run_id": run_id, "request_id": request_id, "service_request_id": "was-request-0001"},
+        "was": {"run_id": run_id, "request_id": request_id, "service_request_id": "was-d1-0001", "query_id": "was-query-0001"},
         "host": {"host_id": "i-0123456789abcdef0", "process": "argus-web", "pid": 1234, "audit_epoch": 1786406406, "audit_serial": 1201},
         "flow_logs": {"eni_id": "eni-0123456789abcdef0", "srcaddr": "10.20.0.10", "dstaddr": "10.20.10.10", "srcport": 443, "dstport": 8080, "protocol": 6, "start_epoch": 1786406407, "end_epoch": 1786406408},
-        "cloudtrail": {"event_id": "cloudtrail-event-0001", "aws_request_id": "aws-request-0001", "event_name": "DescribeInstances", "resource": "arn:aws:ec2:ap-northeast-2:111111111111:instance/i-0123456789abcdef0", "principal": "arn:aws:iam::111111111111:role/argus-d1"},
+        "cloudtrail": {"event_id": "cloudtrail-event-0001", "aws_request_id": "aws-request-0001", "event_name": "GetParameter", "parameter_name": "/argus/base/d1-canary", "principal": "arn:aws:iam::111111111111:role/argus-d1"},
         "s3_getobject": {"event_id": "s3-event-0001", "aws_request_id": "s3-request-0001", "event_name": "GetObject", "bucket": "argus-d1-canary", "key": "scoped/benign-object.txt", "version_id": "3HL4kqtJlcpXroDTDmjVBH40Nrjfkd", "principal": "arn:aws:iam::111111111111:role/argus-d1"},
-        "rds": {"db_instance": "argus-base-db", "connection_id": 42, "query_id": "query-0001"},
+        "rds": {"connection_id": 42, "query_id": "query-0001"},
     }
 
 
@@ -41,11 +41,11 @@ def raw_export(source, event_time, anchors):
     document = {"timestamp": event_time, "source": source, "anchors": anchors}
     if source == "nginx_modsecurity": document["service"] = "nginx modsecurity"
     elif source == "d0_envelope": document.update({"schema": "argus.hybridnb-envelope/v1", "adapter_status": "disabled_not_evaluated"})
-    elif source == "web": document["service"] = "web"
-    elif source == "was": document["service"] = "was"
-    elif source == "cloudtrail": document["eventID"] = anchors["event_id"]
-    elif source == "s3_getobject": document.update({"eventName": "GetObject", "resources_type": "AWS::S3::Object"})
-    elif source == "rds": document["log_type"] = "general"
+    elif source == "web": document.update({"service": "web", "event": "d1_observe_completed"})
+    elif source == "was": document.update({"service": "was", "event": "d1_synthetic_select"})
+    elif source == "cloudtrail": document.update({"eventID": anchors["event_id"], "eventName": "GetParameter", "eventSource": "ssm.amazonaws.com"})
+    elif source == "s3_getobject": document.update({"eventName": "GetObject", "eventSource": "s3.amazonaws.com"})
+    elif source == "rds": document["log_type"] = "argus_d1_query_id="
     return json.dumps(document, sort_keys=True).encode("utf-8")
 
 

@@ -1,0 +1,111 @@
+#!/bin/bash
+set -euo pipefail
+
+# Approved AMI provenance must provide docker, docker compose, aws CLI,
+# amazon-cloudwatch-agent, and auditd. No package manager is used because this
+# private host has no NAT gateway.
+command -v docker
+docker compose version
+command -v aws
+command -v auditctl
+test -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+systemctl disable --now ecs.service || true
+install -d -m 0750 /opt/argus-d1 /etc/argus-d1 /var/lib/argus/d1/evidence /var/log/argus/d1
+
+cat >/etc/argus-d1/runtime.env <<'EOF'
+ARGUS_GATEWAY_IMAGE=${gateway_image_uri}
+ARGUS_WEB_IMAGE=${web_image_uri}
+AWS_REGION=${aws_region}
+D1_S3_BUCKET=${canary_bucket_name}
+D1_S3_KEY=${canary_object_key}
+D1_S3_OBJECT_VERSION_ID=${canary_object_version_id}
+D1_SSM_SENTINEL_PARAMETER_NAME=${web_sentinel_parameter_name}
+WAS_URL=http://${was_private_ip}:8081
+EOF
+chmod 0600 /etc/argus-d1/runtime.env
+
+cat >/opt/argus-d1/compose.yml <<'EOF'
+services:
+  gateway:
+    image: $${ARGUS_GATEWAY_IMAGE}
+    pull_policy: always
+    ports: ["8080:8080"]
+    volumes: ["/var/lib/argus/d1/evidence:/evidence"]
+    read_only: true
+    tmpfs: ["/var/cache/nginx", "/var/run"]
+    networks: [ingress, edge]
+    restart: unless-stopped
+  web:
+    image: $${ARGUS_WEB_IMAGE}
+    pull_policy: always
+    environment:
+      WAS_URL: $${WAS_URL}
+      AWS_REGION: $${AWS_REGION}
+      D1_S3_BUCKET: $${D1_S3_BUCKET}
+      D1_S3_KEY: $${D1_S3_KEY}
+      D1_S3_OBJECT_VERSION_ID: $${D1_S3_OBJECT_VERSION_ID}
+      D1_SSM_SENTINEL_PARAMETER_NAME: $${D1_SSM_SENTINEL_PARAMETER_NAME}
+      D1_LOG_ROOT: /var/log/argus
+    read_only: true
+    tmpfs: ["/tmp"]
+    volumes: ["/var/log/argus/d1:/var/log/argus"]
+    networks: [edge, aws_egress]
+    restart: unless-stopped
+networks:
+  ingress:
+  edge:
+    internal: true
+  aws_egress:
+EOF
+
+cat >/usr/local/sbin/argus-ecr-login <<'EOF'
+#!/bin/bash
+set -euo pipefail
+aws ecr get-login-password --region '${aws_region}' | docker login --username AWS --password-stdin '${ecr_registry}'
+EOF
+chmod 0700 /usr/local/sbin/argus-ecr-login
+
+cat >/etc/systemd/system/argus-d1-web.service <<'EOF'
+[Unit]
+Description=ARGUS D1 Web and Gateway runtime
+After=docker.service network-online.target
+Requires=docker.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/local/sbin/argus-ecr-login
+ExecStart=/usr/bin/docker compose --env-file /etc/argus-d1/runtime.env -f /opt/argus-d1/compose.yml up --detach --pull always
+ExecStop=/usr/bin/docker compose --env-file /etc/argus-d1/runtime.env -f /opt/argus-d1/compose.yml down
+[Install]
+WantedBy=multi-user.target
+EOF
+cat >/etc/systemd/system/argus-d1-ecr-refresh.service <<'EOF'
+[Unit]
+Description=Refresh ARGUS D1 Web and Gateway ECR login and images
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/argus-ecr-login
+ExecStart=/usr/bin/docker compose --env-file /etc/argus-d1/runtime.env -f /opt/argus-d1/compose.yml pull
+EOF
+cat >/etc/systemd/system/argus-d1-ecr-refresh.timer <<'EOF'
+[Unit]
+Description=Refresh ARGUS D1 ECR credentials every six hours
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=6h
+[Install]
+WantedBy=timers.target
+EOF
+
+cat >/opt/aws/amazon-cloudwatch-agent/etc/argus-d1.json <<'EOF'
+{"logs":{"logs_collected":{"files":{"collect_list":[
+{"file_path":"/var/lib/argus/d1/evidence/waf-request-tap.jsonl","log_group_name":"${nginx_modsecurity_log_group_name}","log_stream_name":"{instance_id}"},
+{"file_path":"/var/lib/argus/d1/evidence/modsecurity-audit.log","log_group_name":"${nginx_modsecurity_log_group_name}","log_stream_name":"{instance_id}-audit"},
+{"file_path":"/var/log/argus/d1/d0_envelope.jsonl","log_group_name":"${d0_envelope_log_group_name}","log_stream_name":"{instance_id}"},
+{"file_path":"/var/log/argus/d1/web.jsonl","log_group_name":"${web_log_group_name}","log_stream_name":"{instance_id}"},
+{"file_path":"/var/log/messages","log_group_name":"${host_log_group_name}","log_stream_name":"{instance_id}"}
+]}}}}
+EOF
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/argus-d1.json -s
+systemctl daemon-reload
+systemctl enable --now docker argus-d1-web.service argus-d1-ecr-refresh.timer

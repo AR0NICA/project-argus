@@ -17,6 +17,22 @@ missing = [item for item in required if item not in compose]
 if missing:
     raise SystemExit("compose contract missing: " + ", ".join(missing))
 
+aws_web_bootstrap = (ROOT / "infra/modules/compute/templates/web-user-data.sh.tftpl").read_text(encoding="utf-8")
+aws_web_required = ["networks: [ingress, edge]", "networks: [edge, aws_egress]", "  ingress:\n", "  edge:\n    internal: true"]
+aws_web_missing = [item for item in aws_web_required if item not in aws_web_bootstrap]
+if aws_web_missing:
+    raise SystemExit("AWS Web bootstrap network contract missing: " + ", ".join(aws_web_missing))
+
+aws_was_bootstrap = (ROOT / "infra/modules/compute/templates/was-user-data.sh.tftpl").read_text(encoding="utf-8")
+aws_was_required = ["name_format = USER", "printf 'name = %s\\n'", "service auditd restart", "systemctl disable --now ecs.service || true"]
+aws_was_missing = [item for item in aws_was_required if item not in aws_was_bootstrap]
+if aws_was_missing:
+    raise SystemExit("AWS WAS audit identity contract missing: " + ", ".join(aws_was_missing))
+
+base_iac = (ROOT / "infra/base/main.tf").read_text(encoding="utf-8")
+if 'was_private_ip        = "10.20.20.81"' not in base_iac:
+    raise SystemExit("BASE WAS fixed private IP contract missing")
+
 fixture = json.loads((ROOT / "fixtures/d0a-local-fixtures.json").read_text())
 if fixture["synthetic_row_count"] > 10:
     raise SystemExit("synthetic row limit exceeded")

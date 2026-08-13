@@ -1,5 +1,6 @@
-# Copy to backend.hcl after D0 freezes the state bucket and lock configuration.
-bucket         = "TODO-argus-terraform-state"
+# Bootstrap this bucket separately with ../bootstrap. BASE never manages its
+# active remote state bucket.
+bucket         = "argus-terraform-state-ap-northeast-2-962419263587"
 key            = "argus/base/terraform.tfstate"
 region         = "ap-northeast-2"
 encrypt        = true

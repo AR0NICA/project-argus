@@ -40,7 +40,7 @@ resource "aws_cloudwatch_log_group" "native" {
 resource "aws_db_instance" "this" {
   identifier                      = local.db_identifier
   engine                          = "mysql"
-  engine_version                  = "8.4"
+  engine_version                  = "8.4.10"
   instance_class                  = var.instance_class
   allocated_storage               = var.allocated_storage
   storage_encrypted               = true

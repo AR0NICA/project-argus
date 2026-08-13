@@ -1,0 +1,25 @@
+{
+  "cloudtrail_ssm_getparameter": {
+    "eventTime": "2026-08-13T00:00:02Z",
+    "eventID": "event-1",
+    "requestID": "request-1",
+    "eventSource": "ssm.amazonaws.com",
+    "eventName": "GetParameter",
+    "requestParameters": {"name": "/argus/base/d1-canary"},
+    "userIdentity": {
+      "arn": "arn:aws:sts::111111111111:assumed-role/argus/session",
+      "sessionContext": {"sessionIssuer": {"arn": "arn:aws:iam::111111111111:role/argus"}}
+    }
+  },
+  "rds_general_line": "2026-08-13 00:00:01\t42 Query\tSELECT record_id FROM d1_synthetic_records /* argus_d1_query_id=123e4567-e89b-42d3-a456-426614174000 argus_request_id=ARGUS-20260813-BASE-R01-BEN-D1-OBS-001 */",
+  "was_source_event": {
+    "timestamp": "2026-08-13T00:00:01Z",
+    "source": "was",
+    "service": "was",
+    "event": "d1_synthetic_select",
+    "run_id": "ARGUS-20260813-BASE-R01",
+    "request_id": "ARGUS-20260813-BASE-R01-BEN-D1-OBS-001",
+    "service_request_id": "was-d1-123e4567-e89b-42d3-a456-426614174000",
+    "query_id": "123e4567-e89b-42d3-a456-426614174000"
+  }
+}

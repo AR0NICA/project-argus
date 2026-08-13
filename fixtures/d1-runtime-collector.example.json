@@ -1,0 +1,5 @@
+{
+  "alb_dns_name": {"sensitive": false, "type": "string", "value": "internal-example-alb.ap-northeast-2.elb.amazonaws.com"},
+  "base_hostname": {"sensitive": false, "type": "string", "value": "argus-base.ar0nica.xyz"},
+  "collector_targets": {"sensitive": false, "type": ["object", {}], "value": {"alb_access_log_bucket": "argus-base-alb-access-ap-northeast-2-111111111111", "source_log_groups": {"nginx_modsecurity": "/argus/base/nginx-modsecurity", "d0_envelope": "/argus/base/d0-envelope", "web": "/argus/base/web", "was": "/argus/base/was", "host": "/argus/base/host", "vpc_flow": "/argus/base/vpc-flow", "cloudtrail": "/argus/base/cloudtrail"}, "rds_native_log_groups": ["/aws/rds/instance/argus-base-mysql/error", "/aws/rds/instance/argus-base-mysql/general", "/aws/rds/instance/argus-base-mysql/slowquery"]}}
+}

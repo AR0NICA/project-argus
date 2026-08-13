@@ -1,0 +1,122 @@
+#!/bin/bash
+set -euo pipefail
+
+# Approved AMI provenance must provide docker, docker compose, aws CLI,
+# amazon-cloudwatch-agent, and auditd. No package manager is used because this
+# private host has no NAT gateway.
+command -v docker
+docker compose version
+command -v aws
+command -v auditctl
+test -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+systemctl disable --now ecs.service || true
+install -d -m 0750 /opt/argus-d1 /etc/argus-d1 /var/lib/argus/d1/audit /var/log/argus/d1
+audit_token=$(curl -fsS -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
+audit_instance_id=$(curl -fsS -H "X-aws-ec2-metadata-token: $audit_token" http://169.254.169.254/latest/meta-data/instance-id)
+sed -i "s/^name_format.*/name_format = USER/" /etc/audit/auditd.conf
+if grep -Eq '^name[[:space:]]*=' /etc/audit/auditd.conf; then
+  sed -i "s/^name[[:space:]]*=.*/name = $audit_instance_id/" /etc/audit/auditd.conf
+else
+  printf 'name = %s\n' "$audit_instance_id" >>/etc/audit/auditd.conf
+fi
+service auditd restart
+cat >/usr/local/sbin/argus-d1-load-reader-secret <<'EOF'
+#!/bin/bash
+set -euo pipefail
+aws secretsmanager get-secret-value --region '${aws_region}' --secret-id '${was_d1_reader_secret_arn}' --query SecretString --output text >/run/argus-d1-db-password
+chmod 0600 /run/argus-d1-db-password
+EOF
+chmod 0700 /usr/local/sbin/argus-d1-load-reader-secret
+cat >/etc/argus-d1/runtime.env <<'EOF'
+ARGUS_WAS_IMAGE=${was_image_uri}
+ARGUS_SEED_IMAGE=${seed_image_uri}
+MYSQL_HOST=${rds_endpoint}
+MYSQL_DATABASE=argus_synthetic
+MYSQL_D1_USER=argus_d1_reader
+MYSQL_D1_PASSWORD_FILE=/run/argus-d1-db-password
+EOF
+chmod 0600 /etc/argus-d1/runtime.env
+
+cat >/opt/argus-d1/compose.yml <<'EOF'
+services:
+  was:
+    image: $${ARGUS_WAS_IMAGE}
+    pull_policy: always
+    ports: ["8081:8081"]
+    environment:
+      DB_HOST: $${MYSQL_HOST}
+      DB_NAME: $${MYSQL_DATABASE}
+      DB_USER: $${MYSQL_D1_USER}
+      DB_PASSWORD_FILE: /run/secrets/argus-d1-db-password
+      D1_LOG_ROOT: /var/log/argus
+    volumes:
+      - /var/lib/argus/d1/audit:/var/lib/argus/d1/audit
+      - /var/log/argus/d1:/var/log/argus
+      - $${MYSQL_D1_PASSWORD_FILE}:/run/secrets/argus-d1-db-password:ro
+    read_only: true
+    tmpfs: ["/tmp"]
+    restart: unless-stopped
+EOF
+
+cat >/usr/local/sbin/argus-ecr-login <<'EOF'
+#!/bin/bash
+set -euo pipefail
+aws ecr get-login-password --region '${aws_region}' | docker login --username AWS --password-stdin '${ecr_registry}'
+EOF
+chmod 0700 /usr/local/sbin/argus-ecr-login
+
+cat >/etc/systemd/system/argus-d1-was.service <<'EOF'
+[Unit]
+Description=ARGUS D1 WAS runtime
+After=docker.service network-online.target
+Requires=docker.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/local/sbin/argus-ecr-login
+ExecStartPre=/usr/local/sbin/argus-d1-load-reader-secret
+ExecStart=/usr/bin/docker compose --env-file /etc/argus-d1/runtime.env -f /opt/argus-d1/compose.yml up --detach --pull always
+ExecStop=/usr/bin/docker compose --env-file /etc/argus-d1/runtime.env -f /opt/argus-d1/compose.yml down
+[Install]
+WantedBy=multi-user.target
+EOF
+cat >/etc/systemd/system/argus-d1-ecr-refresh.service <<'EOF'
+[Unit]
+Description=Refresh ARGUS D1 WAS ECR login and image
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/argus-ecr-login
+ExecStart=/usr/bin/docker compose --env-file /etc/argus-d1/runtime.env -f /opt/argus-d1/compose.yml pull
+EOF
+cat >/etc/systemd/system/argus-d1-ecr-refresh.timer <<'EOF'
+[Unit]
+Description=Refresh ARGUS D1 ECR credentials every six hours
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=6h
+[Install]
+WantedBy=timers.target
+EOF
+
+touch /var/lib/argus/d1/audit/argus-d1-observe.marker
+cat >/etc/audit/rules.d/argus-d1.rules <<'EOF'
+-w /var/lib/argus/d1/audit -p wa -k argus_d1_observe
+EOF
+# The ECS AL2023 parent enables the audit package's never,task shortcut.  It
+# prevents watched container processes from receiving a syscall audit context.
+# Remove only that exact default directive before loading the fixed D1 watch.
+for audit_rule_file in /etc/audit/rules.d/*.rules; do
+  test -e "$audit_rule_file" || continue
+  sed -i '/^[[:space:]]*-a[[:space:]][[:space:]]*\(never,task\|task,never\)[[:space:]]*$/d' "$audit_rule_file"
+done
+augenrules --load
+cat >/opt/aws/amazon-cloudwatch-agent/etc/argus-d1.json <<'EOF'
+{"logs":{"logs_collected":{"files":{"collect_list":[
+{"file_path":"/var/log/argus/d1/was.jsonl","log_group_name":"${was_log_group_name}","log_stream_name":"{instance_id}"},
+{"file_path":"/var/log/audit/audit.log","log_group_name":"${host_log_group_name}","log_stream_name":"{instance_id}-audit"},
+{"file_path":"/var/log/messages","log_group_name":"${host_log_group_name}","log_stream_name":"{instance_id}"}
+]}}}}
+EOF
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/argus-d1.json -s
+systemctl daemon-reload
+systemctl enable --now docker argus-d1-ecr-refresh.timer

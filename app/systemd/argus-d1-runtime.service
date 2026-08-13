@@ -1,0 +1,21 @@
+[Unit]
+Description=ARGUS D1 benign observation runtime
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/argus-d1
+EnvironmentFile=/etc/argus-d1/runtime.env
+ExecStartPre=/usr/bin/docker compose --env-file /etc/argus-d1/runtime.env -f /opt/argus-d1/compose.d1.base.yml config --quiet
+ExecStart=/usr/bin/docker compose --env-file /etc/argus-d1/runtime.env -f /opt/argus-d1/compose.d1.base.yml up --detach --pull always
+ExecStop=/usr/bin/docker compose --env-file /etc/argus-d1/runtime.env -f /opt/argus-d1/compose.d1.base.yml down
+TimeoutStartSec=120
+TimeoutStopSec=60
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

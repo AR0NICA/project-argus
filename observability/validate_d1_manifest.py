@@ -13,8 +13,8 @@ REQUIRED_SOURCES = ("alb", "nginx_modsecurity", "d0_envelope", "web", "was", "ho
 MAX_EXPORTED_RAW_BYTES = 1048576
 MAX_WINDOW_SECONDS = 900
 EVIDENCE_KINDS = {"alb":"alb_access_log", "nginx_modsecurity":"nginx_modsecurity_log", "d0_envelope":"hybridnb_envelope_v1", "web":"web_application_log", "was":"was_application_log", "host":"host_audit_log", "flow_logs":"vpc_flow_log", "cloudtrail":"cloudtrail_management_event", "s3_getobject":"cloudtrail_s3_data_event", "rds":"rds_database_log"}
-ANCHOR_KEYS = {"alb":("trace_id","request_anchor","path"), "nginx_modsecurity":("run_id","request_id","transaction_id"), "d0_envelope":("run_id","request_id","body_sha256"), "web":("run_id","request_id","session_hash"), "was":("run_id","request_id","service_request_id"), "host":("host_id","process","pid","audit_epoch","audit_serial"), "flow_logs":("eni_id","srcaddr","dstaddr","srcport","dstport","protocol","start_epoch","end_epoch"), "cloudtrail":("event_id","aws_request_id","event_name","resource","principal"), "s3_getobject":("event_id","aws_request_id","event_name","bucket","key","version_id","principal"), "rds":("db_instance","connection_id","query_id")}
-SOURCE_MARKERS = {"alb":("trace_id",), "nginx_modsecurity":("nginx","modsecurity"), "d0_envelope":("argus.hybridnb-envelope/v1","disabled_not_evaluated"), "web":("web",), "was":("was",), "host":("audit(",), "flow_logs":("eni-",), "cloudtrail":("eventID",), "s3_getobject":("GetObject","AWS::S3::Object"), "rds":("general",)}
+ANCHOR_KEYS = {"alb":("trace_id","request_anchor","path"), "nginx_modsecurity":("run_id","request_id","transaction_id"), "d0_envelope":("run_id","request_id","body_sha256"), "web":("run_id","request_id","session_hash"), "was":("run_id","request_id","service_request_id","query_id"), "host":("host_id","process","pid","audit_epoch","audit_serial"), "flow_logs":("eni_id","srcaddr","dstaddr","srcport","dstport","protocol","start_epoch","end_epoch"), "cloudtrail":("event_id","aws_request_id","event_name","parameter_name","principal"), "s3_getobject":("event_id","aws_request_id","event_name","bucket","key","version_id","principal"), "rds":("connection_id","query_id")}
+SOURCE_MARKERS = {"alb":(), "nginx_modsecurity":("nginx","modsecurity"), "d0_envelope":("argus.hybridnb-envelope/v1","disabled_not_evaluated"), "web":("d1_observe_completed","web"), "was":("d1_synthetic_select","was"), "host":("audit(",), "flow_logs":("eni-",), "cloudtrail":("eventID","GetParameter","ssm.amazonaws.com"), "s3_getobject":("GetObject","s3.amazonaws.com"), "rds":("argus_d1_query_id=",)}
 
 def fail(message): raise ValueError(message)
 def utc(value, label):
@@ -40,6 +40,7 @@ def validate_anchors(source, anchors, run_id, application_request_id, event_time
     if any(not isinstance(value, (str, int)) or value == "" for value in anchors.values()): fail("source-native anchor value invalid")
     if source in ("nginx_modsecurity", "d0_envelope", "web", "was"):
         if anchors["run_id"] != run_id or anchors["request_id"] != application_request_id: fail("application source correlation mismatch")
+    if source == "web" and not SHA_RE.fullmatch(anchors["session_hash"]): fail("web D1 session hash invalid")
     if source == "d0_envelope" and not SHA_RE.fullmatch(anchors["body_sha256"]): fail("D0 body hash invalid")
     if source == "alb":
         if not str(anchors["trace_id"]).startswith("Root=") or not str(anchors["request_anchor"]).startswith("GET ") or not str(anchors["path"]).startswith("/"): fail("ALB native anchors invalid")
@@ -52,14 +53,16 @@ def validate_anchors(source, anchors, run_id, application_request_id, event_time
         if not str(anchors["eni_id"]).startswith("eni-") or not 0 < ports_and_protocol[0] <= 65535 or not 0 < ports_and_protocol[1] <= 65535 or not 0 < ports_and_protocol[2] <= 255: fail("flow tuple anchors invalid")
         if flow_start > flow_end or flow_start < int(window_start.timestamp()) or flow_end > int(window_end.timestamp()) or not flow_start <= int(event_time.timestamp()) <= flow_end: fail("flow native time anchors outside run window")
     if source == "cloudtrail":
-        if not str(anchors["event_name"]) or not str(anchors["resource"]).startswith("arn:") or not str(anchors["principal"]).startswith("arn:"): fail("CloudTrail management anchors invalid")
+        if anchors["event_name"] != "GetParameter" or not str(anchors["parameter_name"]).startswith("/") or not str(anchors["principal"]).startswith("arn:"): fail("CloudTrail SSM GetParameter anchors invalid")
     if source == "s3_getobject":
         if anchors["event_name"] != "GetObject" or not str(anchors["bucket"]) or not str(anchors["key"]) or not str(anchors["version_id"]) or not str(anchors["principal"]).startswith("arn:"): fail("S3 GetObject anchors invalid")
     if source == "host":
         try: audit_epoch, audit_serial = int(anchors["audit_epoch"]), int(anchors["audit_serial"])
         except ValueError as exc: raise ValueError("host audit anchors invalid") from exc
         if not str(anchors["pid"]).isdigit() or audit_serial < 0 or audit_epoch < int(window_start.timestamp()) or audit_epoch > int(window_end.timestamp()) or abs(audit_epoch - int(event_time.timestamp())) > 1: fail("host audit anchors invalid")
-    if source == "rds" and (not str(anchors["db_instance"]) or not str(anchors["connection_id"]).isdigit() or not str(anchors["query_id"])): fail("RDS database anchors invalid")
+    if source in ("was", "rds") and not str(anchors["query_id"]): fail("WAS/RDS query anchor invalid")
+    if source == "was" and not str(anchors["service_request_id"]).startswith("was-d1-"): fail("WAS service request anchor invalid")
+    if source == "rds" and not str(anchors["connection_id"]).isdigit(): fail("RDS database anchors invalid")
 
 def exported_raw(root, relative_path, source, event_time, anchors):
     if not isinstance(relative_path, str) or not relative_path or Path(relative_path).is_absolute(): fail("runtime evidence path must be a relative path")
@@ -71,7 +74,7 @@ def exported_raw(root, relative_path, source, event_time, anchors):
     if not raw or len(raw) > MAX_EXPORTED_RAW_BYTES: fail("runtime exported raw evidence is empty or exceeds the bound")
     try: text = raw.decode("utf-8")
     except UnicodeDecodeError as exc: raise ValueError("runtime exported raw evidence must be UTF-8") from exc
-    native_time_marker = () if source in ("host", "flow_logs") else (event_time,)
+    native_time_marker = ()
     for marker in (*native_time_marker, *SOURCE_MARKERS[source], *(str(value) for value in anchors.values())):
         if marker not in text: fail("runtime raw evidence lacks native time/anchor/semantic marker")
     return path, raw

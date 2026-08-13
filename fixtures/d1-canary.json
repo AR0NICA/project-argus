@@ -1,0 +1,1 @@
+{"fixture_id":"BEN-D1-OBS-001","kind":"synthetic_canary","schema_version":"argus.d1-canary/v1","summary":"Fixed benign object for exact-version D1 S3 observation."}

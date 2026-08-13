@@ -1,5 +1,3 @@
-data "aws_region" "current" {}
-
 locals {
   subnet_specs = {
     edge_a = { cidr = var.subnet_cidrs.edge_a, az = var.availability_zones[0], tier = "edge" }
@@ -33,7 +31,7 @@ resource "aws_subnet" "this" {
   vpc_id                  = aws_vpc.this.id
   cidr_block              = each.value.cidr
   availability_zone       = each.value.az
-  map_public_ip_on_launch = false
+  map_public_ip_on_launch = each.value.tier == "edge"
   tags = merge(local.tags, {
     Name = "${var.name_prefix}-${replace(each.key, "_", "-")}"
     Tier = each.value.tier
@@ -82,9 +80,9 @@ resource "aws_route_table_association" "this" {
 
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.this.id
-  service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
-  route_table_ids   = [aws_route_table.web.id]
+  route_table_ids   = [aws_route_table.web.id, aws_route_table.was.id]
   tags              = merge(local.tags, { Name = "${var.name_prefix}-s3-gateway" })
 }
 
@@ -92,8 +90,6 @@ resource "aws_security_group" "vpce" {
   name        = "${var.name_prefix}-vpce"
   description = "ARGUS private interface endpoint ingress only"
   vpc_id      = aws_vpc.this.id
-  ingress     = []
-  egress      = []
   tags        = merge(local.tags, { Name = "${var.name_prefix}-vpce" })
 }
 
@@ -101,8 +97,6 @@ resource "aws_security_group" "alb" {
   name        = "${var.name_prefix}-alb"
   description = "Only approved test CIDRs may reach public HTTPS"
   vpc_id      = aws_vpc.this.id
-  ingress     = []
-  egress      = []
   tags        = merge(local.tags, { Name = "${var.name_prefix}-alb" })
 }
 
@@ -110,8 +104,6 @@ resource "aws_security_group" "web" {
   name        = "${var.name_prefix}-web"
   description = "Private Web tier"
   vpc_id      = aws_vpc.this.id
-  ingress     = []
-  egress      = []
   tags        = merge(local.tags, { Name = "${var.name_prefix}-web" })
 }
 
@@ -119,8 +111,6 @@ resource "aws_security_group" "was" {
   name        = "${var.name_prefix}-was"
   description = "Private WAS tier"
   vpc_id      = aws_vpc.this.id
-  ingress     = []
-  egress      = []
   tags        = merge(local.tags, { Name = "${var.name_prefix}-was" })
 }
 
@@ -128,9 +118,41 @@ resource "aws_security_group" "rds" {
   name        = "${var.name_prefix}-rds"
   description = "Private RDS tier"
   vpc_id      = aws_vpc.this.id
-  ingress     = []
-  egress      = []
   tags        = merge(local.tags, { Name = "${var.name_prefix}-rds" })
+}
+
+resource "aws_security_group" "image_builder" {
+  name        = "${var.name_prefix}-image-builder"
+  description = "Temporary Image Builder package retrieval only"
+  vpc_id      = aws_vpc.this.id
+  tags        = merge(local.tags, { Name = "${var.name_prefix}-image-builder" })
+}
+
+resource "aws_vpc_security_group_egress_rule" "image_builder_https" {
+  security_group_id = aws_security_group.image_builder.id
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
+  description       = "Temporary Image Builder package retrieval"
+}
+
+resource "aws_vpc_security_group_egress_rule" "image_builder_dns_udp" {
+  security_group_id = aws_security_group.image_builder.id
+  cidr_ipv4         = "10.20.0.2/32"
+  from_port         = 53
+  to_port           = 53
+  ip_protocol       = "udp"
+  description       = "Temporary Image Builder VPC resolver UDP"
+}
+
+resource "aws_vpc_security_group_egress_rule" "image_builder_dns_tcp" {
+  security_group_id = aws_security_group.image_builder.id
+  cidr_ipv4         = "10.20.0.2/32"
+  from_port         = 53
+  to_port           = 53
+  ip_protocol       = "tcp"
+  description       = "Temporary Image Builder VPC resolver TCP"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_https" {
@@ -261,10 +283,10 @@ resource "aws_vpc_security_group_ingress_rule" "vpce_from_was" {
 }
 
 resource "aws_vpc_endpoint" "interface" {
-  for_each = toset(["ssm", "ssmmessages", "logs"])
+  for_each = toset(["ssm", "ssmmessages", "ec2messages", "logs", "ecr.api", "ecr.dkr", "secretsmanager"])
 
   vpc_id              = aws_vpc.this.id
-  service_name        = "com.amazonaws.${data.aws_region.current.region}.${each.value}"
+  service_name        = "com.amazonaws.${var.aws_region}.${each.value}"
   vpc_endpoint_type   = "Interface"
   private_dns_enabled = true
   subnet_ids          = [aws_subnet.this["web_a"].id, aws_subnet.this["web_b"].id]

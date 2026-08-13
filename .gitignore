@@ -14,7 +14,13 @@ CLAUDE.md
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.dependency-audit*/
+infra/seed/.tmp-deps/
 .vscode/
+
+# Local deployment output snapshots contain live resource identifiers.
+output/base-network-outputs.json
+output/d1-terraform-outputs.json
 
 # Terraform local state, plans, and backend material
 .terraform/
@@ -30,4 +36,3 @@ backend.hcl
 *.tfvars.json
 *.auto.tfvars.json
 !*.tfvars.example
-

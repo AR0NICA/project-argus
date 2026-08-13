@@ -84,6 +84,7 @@ module "network" {
   source = "../modules/network"
 
   name_prefix        = local.name_prefix
+  aws_region         = var.aws_region
   vpc_cidr           = "10.20.0.0/16"
   availability_zones = var.availability_zones
   allowed_test_cidrs = var.allowed_test_cidrs
@@ -103,7 +104,43 @@ module "network" {
     data_b = "10.20.31.0/24"
   }
 
-  depends_on = [terraform_data.d0_guard, module.safety]
+  depends_on = [module.safety]
+}
+
+resource "aws_vpc_security_group_ingress_rule" "image_builder_to_vpce" {
+  count                        = local.network_enabled ? 1 : 0
+  security_group_id            = module.network[0].security_group_ids.vpce
+  referenced_security_group_id = module.network[0].security_group_ids.image_builder
+  from_port                    = 443
+  to_port                      = 443
+  ip_protocol                  = "tcp"
+  description                  = "Image Builder SSM control traffic"
+}
+
+resource "aws_vpc_security_group_egress_rule" "was_to_s3_gateway" {
+  count             = local.network_enabled ? 1 : 0
+  security_group_id = module.network[0].security_group_ids.was
+  prefix_list_id    = module.network[0].s3_prefix_list_id
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
+  description       = "WAS ECR image layer retrieval through S3 gateway"
+}
+
+resource "aws_vpc_security_group_egress_rule" "runtime_dns" {
+  for_each = local.network_enabled ? {
+    web_tcp = { tier = "web", protocol = "tcp" }
+    web_udp = { tier = "web", protocol = "udp" }
+    was_tcp = { tier = "was", protocol = "tcp" }
+    was_udp = { tier = "was", protocol = "udp" }
+  } : {}
+
+  security_group_id = module.network[0].security_group_ids[each.value.tier]
+  cidr_ipv4         = "10.20.0.2/32"
+  from_port         = 53
+  to_port           = 53
+  ip_protocol       = each.value.protocol
+  description       = "${upper(each.value.tier)} VPC resolver ${upper(each.value.protocol)}"
 }
 
 module "observability" {
@@ -156,6 +193,7 @@ module "compute" {
   was_instance_type     = var.was_instance_type
   web_subnet_id         = module.network[0].web_subnet_ids[0]
   was_subnet_id         = module.network[0].was_subnet_ids[0]
+  was_private_ip        = "10.20.20.81"
   web_security_group_id = module.network[0].security_group_ids.web
   was_security_group_id = module.network[0].security_group_ids.was
   web_target_group_arn  = module.edge[0].web_target_group_arn
@@ -205,8 +243,6 @@ module "canary" {
   web_role_name               = local.attachments_enabled ? module.compute[0].web_test_role_name : ""
   attach_exact_version_policy = local.attachments_enabled
   tags                        = local.tags
-
-  depends_on = [module.observability, module.edge, module.compute, module.data]
 }
 
 resource "terraform_data" "observation_source_attachments" {

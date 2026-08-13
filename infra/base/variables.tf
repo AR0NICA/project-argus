@@ -3,8 +3,8 @@ variable "deployment_phase" {
   default = "disabled"
 
   validation {
-    condition     = contains(["disabled", "network", "evidence", "substrate", "attachments"], var.deployment_phase)
-    error_message = "deployment_phase must advance through disabled, network, evidence, substrate, or attachments."
+    condition     = contains(["disabled", "network", "evidence", "image", "substrate", "attachments"], var.deployment_phase)
+    error_message = "deployment_phase must advance through disabled, network, evidence, image, substrate, or attachments."
   }
 }
 
@@ -31,42 +31,77 @@ variable "teardown_final_snapshot_identifier" {
 variable "aws_region" {
   type    = string
   default = "ap-northeast-2"
-}
-
-variable "allowed_account_ids" {
-  type    = list(string)
-  default = []
 
   validation {
-    condition     = length(var.allowed_account_ids) <= 1 && alltrue([for account_id in var.allowed_account_ids : can(regex("^[0-9]{12}$", account_id))])
-    error_message = "allowed_account_ids must contain at most one 12-digit AWS account ID."
+    condition     = var.aws_region == "ap-northeast-2"
+    error_message = "BASE is approved only in ap-northeast-2."
   }
-}
-
-variable "availability_zones" {
-  type    = list(string)
-  default = []
 }
 
 variable "allowed_test_cidrs" {
   type    = list(string)
   default = []
+
+  validation {
+    condition     = length(var.allowed_test_cidrs) == 0 || (length(var.allowed_test_cidrs) == 1 && can(cidrhost(var.allowed_test_cidrs[0], 0)) && endswith(var.allowed_test_cidrs[0], "/32"))
+    error_message = "allowed_test_cidrs must be empty before execution or exactly one public IPv4 /32."
+  }
 }
 
-variable "tls_certificate_arn" {
+variable "hostname" {
+  type    = string
+  default = "argus-base.ar0nica.xyz"
+
+  validation {
+    condition     = var.hostname == "argus-base.ar0nica.xyz"
+    error_message = "BASE hostname is fixed to argus-base.ar0nica.xyz."
+  }
+}
+
+variable "hosted_zone_name" {
+  type    = string
+  default = "ar0nica.xyz"
+}
+
+variable "web_image_digest" {
   type    = string
   default = ""
 }
 
-variable "web_ami_id" {
+variable "gateway_image_digest" {
   type    = string
   default = ""
 }
 
-variable "was_ami_id" {
+variable "was_image_digest" {
   type    = string
   default = ""
 }
+
+variable "seed_image_digest" {
+  type    = string
+  default = ""
+}
+
+variable "builder_parent_ami_id" {
+  type    = string
+  default = ""
+}
+variable "image_builder_component_version" {
+  type    = string
+  default = "1.0.0"
+}
+variable "image_builder_recipe_version" {
+  type    = string
+  default = "1.0.1"
+}
+
+variable "web_sentinel_value" {
+  type      = string
+  default   = "ARGUS_BASE_WEB_BOOTSTRAP_SENTINEL_V1"
+  sensitive = true
+}
+
 
 variable "web_instance_type" {
   type    = string
@@ -90,7 +125,12 @@ variable "rds_allocated_storage" {
 
 variable "canary_bucket_name" {
   type    = string
-  default = ""
+  default = "argus-base-canary-ap-northeast-2-962419263587"
+
+  validation {
+    condition     = var.canary_bucket_name == "argus-base-canary-ap-northeast-2-962419263587"
+    error_message = "BASE canary bucket name is fixed by the approved substrate contract."
+  }
 }
 
 variable "canary_object_key" {
@@ -110,7 +150,7 @@ variable "evidence_retention_in_days" {
 
 variable "enable_budget" {
   type    = bool
-  default = false
+  default = true
 }
 
 variable "monthly_limit_usd" {
@@ -119,6 +159,21 @@ variable "monthly_limit_usd" {
 }
 
 variable "budget_alert_email" {
+  type    = string
+  default = ""
+}
+
+variable "evidence_cleanup_authorized" {
+  type    = bool
+  default = false
+}
+
+variable "enable_seed_master_secret_read" {
+  type    = bool
+  default = false
+}
+
+variable "evidence_cross_review_reference" {
   type    = string
   default = ""
 }

@@ -1,0 +1,1 @@
+mysql-connector-python==9.0.0 --hash=sha256:016d81bb1499dee8b77c82464244e98f10d3671ceefb4023adc559267d1fad50

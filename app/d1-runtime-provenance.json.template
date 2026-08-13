@@ -1,0 +1,20 @@
+{
+  "schema_version": "argus.d1-runtime-provenance/v1",
+  "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+  "fixture_id": "BEN-D1-OBS-001",
+  "source_revision": "replace-with-reviewed-git-commit",
+  "images": {
+    "gateway": "111111111111.dkr.ecr.ap-northeast-2.amazonaws.com/argus-gateway@sha256:replace_with_digest",
+    "web": "111111111111.dkr.ecr.ap-northeast-2.amazonaws.com/argus-web@sha256:replace_with_digest",
+    "was": "111111111111.dkr.ecr.ap-northeast-2.amazonaws.com/argus-was@sha256:replace_with_digest"
+  },
+  "contracts": {
+    "max_request_bytes": 32768,
+    "max_synthetic_rows": 10,
+    "minimum_interval_seconds": 1,
+    "concurrency": 1,
+    "waf_status": "disabled_not_evaluated",
+    "hybridnb_status": "disabled_not_evaluated",
+    "audit_marker_path": "/var/lib/argus/d1/audit/argus-d1-observe.marker"
+  }
+}

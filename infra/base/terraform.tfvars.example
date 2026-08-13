@@ -9,25 +9,34 @@ teardown_authorized                = false
 teardown_mode                      = "protected"
 teardown_final_snapshot_identifier = ""
 
-allowed_account_ids = []
-availability_zones  = []
+# Account and availability zones are fixed in source to 962419263587 and
+# ap-northeast-2a/ap-northeast-2c.
+# Leave empty. infra/scripts/Invoke-BasePlan.ps1 resolves the execution-time
+# public IPv4 and passes it as the single /32 without persisting it locally.
 allowed_test_cidrs  = []
 
 evidence_retention_in_days = 30
 
-tls_certificate_arn = ""
-web_ami_id           = ""
-was_ami_id           = ""
+builder_parent_ami_id = ""
+gateway_image_digest  = ""
+web_image_digest      = ""
+was_image_digest      = ""
+seed_image_digest     = ""
 web_instance_type    = "t3.small"
 was_instance_type    = "t3.small"
 
 rds_instance_class      = "db.t3.micro"
 rds_allocated_storage   = 20
-canary_bucket_name      = ""
+canary_bucket_name      = "argus-base-canary-ap-northeast-2-962419263587"
 canary_object_key       = "canary/was-bundle.json"
 canary_object_version_id = ""
+# Default runtime role never reads the RDS master secret. A separately reviewed
+# seed-only plan may temporarily set this true, and must set it false again
+# before D1 health validation.
+enable_seed_master_secret_read = false
 
-enable_budget      = false
+# Budget notification email is deliberately not persisted here. The apply
+# script prompts locally immediately before apply.
+enable_budget      = true
 monthly_limit_usd  = 25
-budget_alert_email = ""
 owner              = "TODO"
