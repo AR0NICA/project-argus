@@ -1,0 +1,43 @@
+# D2-SAFETY — kill-switch runtime verification result
+
+Status: **PASS (6/6)** · Date: 2026-08-20 · Environment: BASE · Goal: safety controls
+Gate reference: D1 CrossReviewRef `CRR-D1-BASE-R06-2026-08-20` (D2 is a separate approval gate).
+
+This is a sanitized summary. Raw evidence (resource ids, endpoints, CIDRs, ARNs,
+SSM command ids) is retained only in the local, git-ignored evidence root
+`evidence/ARGUS-20260820-BASE-D2/`; it is never copied to GitHub or Notion.
+
+## What D2 proves
+
+Each of the six kill switches was exercised on the live BASE stack as an atomic
+**baseline → activate (confirm the path is cut) → recover (confirm restored)**
+sequence, and the independent evidence plane was confirmed to keep recording
+throughout — without depending on the vulnerable application session or the EC2
+test role.
+
+## Kill switches (workbook §7)
+
+| # | Kill switch | Realized as | Activate result | Recover result |
+|---|---|---|---|---|
+| KS1 | Remove approved CIDR from the ALB security group | revoke/authorize the HTTPS ingress rule | client HTTPS times out (blocked) | HTTPS reachable again |
+| KS2 | Edge/WAF block-all | halt the ModSecurity gateway container (nginx config is baked/read-only, so a container-level block is the reversible equivalent of a block-all rule) | edge refuses all requests | edge serves normally |
+| KS3 | Detach the web test role | disassociate/associate the web instance profile | no instance profile associated | role re-associated |
+| KS4 | Block exact canary `GetObject` | add/remove an explicit Deny statement on the canary object | GetObject → AccessDenied | GetObject → OK |
+| KS5 | Remove WAS TCP 8090 rule | revoke/authorize the admin-API ingress rule | rule absent | rule restored |
+| KS6 | Stop the vulnerable app | `systemctl stop/start` the WAS service (no `ARGUS_LAB_MODE` flag exists, so the switch is realized as stopping the vulnerable app) | service inactive, health unreachable | service active, health 200 |
+
+## Independent evidence-collection persists (D2 core invariant)
+
+CloudTrail recorded every kill-switch action within the test window: the two
+security-group revoke/authorize pairs (KS1, KS5), the bucket-policy changes
+(KS4), the instance-profile disassociate/associate pair (KS3), and the SSM
+commands (KS2, KS6). Crucially, **KS3 detached the web test role and CloudTrail
+still recorded the action** — demonstrating that the central evidence path does
+not depend on the vulnerable application session or the EC2 test role, exactly as
+the safety contract requires.
+
+## Post-test state
+
+All six switches recovered to baseline; the workload returned to healthy. The two
+security-group rules edited out-of-band during KS1/KS5 were reconciled back under
+Terraform management (`terraform plan` = no changes).
