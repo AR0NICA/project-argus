@@ -1,0 +1,49 @@
+{
+  "_note": "TEMPLATE ONLY. Shows the shape of the operator-exported runtime input for collect_d3_runtime.py. Replace every placeholder with values observed from a live BASE R0-UNIT run. Success tokens, handoff ids, and content hashes come from the live run; independent raw-evidence files must already sit under <evidence-root>/<run_id>/ at the relative evidence_path shown. This template is not a validation fixture and will not pass the validator as written.",
+  "input_version": "argus.d3-runtime-input/v1",
+  "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+  "run_window": {"start_utc": "YYYY-MM-DDTHH:MM:SSZ", "end_utc": "YYYY-MM-DDTHH:MM:SSZ"},
+  "stages": ["S06"],
+  "observations": {
+    "S06": {
+      "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "success_token_kind": "event_id",
+      "success_token_value": "EVT-<32-hex from the live handoff engine>",
+      "content_sha256": "<64-hex content hash from the live stage event>",
+      "handoff_in_id": "<uuid4 of the consumed predecessor handoff>",
+      "handoff_out_id": "<uuid4 of the issued handoff>",
+      "harness_injected": true,
+      "runtime_sources": [
+        {
+          "source": "cloudtrail",
+          "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+          "evidence_path": "raw/S06-cloudtrail.json",
+          "content_sha256": "<64-hex sha256 of the exported raw file>",
+          "collector": "operator-export",
+          "redaction_status": "independent_source_no_app_dependency",
+          "native_record_id": "<CloudTrail eventID>",
+          "anchors": ["<CloudTrail eventID>", "ARGUS-YYYYMMDD-BASE-RNN"]
+        }
+      ]
+    }
+  },
+  "handoffs": [
+    {
+      "handoff_schema_version": "argus.d3-handoff/v1",
+      "handoff_id": "<uuid4>",
+      "handoff_kind": "credential_handoff_id",
+      "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+      "issued_by_stage": "harness",
+      "consumed_by_stage": "S06",
+      "predecessor_success_token": "<frozen synthetic S05 token from the approval harness>",
+      "predecessor_success_kind": "hash",
+      "issued_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "ttl_seconds": 120,
+      "not_after_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "one_time": true,
+      "consumed": true,
+      "consumed_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "harness_injected": true
+    }
+  ]
+}

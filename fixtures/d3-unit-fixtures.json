@@ -1,0 +1,144 @@
+{
+  "manifest_version": "argus.d3-unit.fixture/v1",
+  "experiment_group": "R0-UNIT",
+  "lab_boundary": "authorized isolated account, approved CIDR, synthetic data only, non-destructive, 1 rps, concurrency 1, <=10 rows, <=32 KiB",
+  "safety_bounds": {
+    "s01_max_total_requests": 12,
+    "per_stage_contract_requests": 1,
+    "per_stage_control_requests": 1,
+    "max_rps": 1,
+    "concurrency": 1,
+    "max_result_rows": 10,
+    "max_result_bytes": 32768,
+    "handoff_ttl_seconds": 120,
+    "min_interval_seconds": 1
+  },
+  "allow_list_actions": ["MARKER", "IMDS_IDENTITY", "WAS_AUTH"],
+  "forbidden": [
+    "arbitrary SQL text",
+    "arbitrary shell or commands",
+    "arbitrary URLs",
+    "arbitrary file paths",
+    "ListBucket, PutObject, DeleteObject, any write or delete API",
+    "bucket or IAM policy changes",
+    "range scans or internal CIDR enumeration",
+    "C2 or reverse shells",
+    "credential material capture",
+    "non-synthetic data",
+    "HybridNB score, label, threshold, or WAF/ML four-quadrant before D5"
+  ],
+  "hybridnb_boundary": "disabled_not_evaluated before D5; no model score/label/threshold produced",
+  "stages": [
+    {
+      "stage": "S01",
+      "fixture_or_resource_id": "ATK-S01-RECON-01",
+      "action": null,
+      "purpose": "bounded reconnaissance over the frozen public surface only",
+      "success_token": "endpoint_map_hash",
+      "success_type": "hash",
+      "handoff_in": null,
+      "handoff_out": "endpoint_contract_id",
+      "handoff_out_meaning": "frozen authentication endpoint and request contract",
+      "max_requests": 12
+    },
+    {
+      "stage": "S02",
+      "fixture_or_resource_id": "ATK-S02-SYNTH-AUTH-01",
+      "action": null,
+      "purpose": "fixed controlled SQLi-class authentication fixture (no external SQL text accepted)",
+      "success_token": "auth_decision_hash",
+      "success_type": "hash",
+      "handoff_in": "endpoint_contract_id",
+      "handoff_out": "auth_decision_id",
+      "handoff_out_meaning": "one-time authentication decision id"
+    },
+    {
+      "stage": "S03",
+      "fixture_or_resource_id": "ATK-S03-ADMIN-01",
+      "action": null,
+      "purpose": "issue one administrator session bound to the auth decision",
+      "success_token": "admin_session_hash",
+      "success_type": "hash",
+      "handoff_in": "auth_decision_id",
+      "handoff_out": "upload_ticket_id",
+      "handoff_out_meaning": "one-time upload ticket id"
+    },
+    {
+      "stage": "S04",
+      "fixture_or_resource_id": "ATK-S04-MARKER-01",
+      "action": "MARKER",
+      "purpose": "administrator-only fixed non-destructive marker write",
+      "success_token": "web_marker_sha256",
+      "success_type": "hash",
+      "handoff_in": "upload_ticket_id",
+      "handoff_out": "web_action_context_id",
+      "handoff_out_meaning": "one-time web action context id"
+    },
+    {
+      "stage": "S05",
+      "fixture_or_resource_id": "ATK-S05-IMDS-01",
+      "action": "IMDS_IDENTITY",
+      "purpose": "fixed IMDS role-identity read; role alias only, never credential material",
+      "success_token": "role_identity_hash",
+      "success_type": "hash",
+      "handoff_in": "web_action_context_id",
+      "handoff_out": "credential_handoff_id",
+      "handoff_out_meaning": "one-time credential handoff id (alias only)"
+    },
+    {
+      "stage": "S06",
+      "fixture_or_resource_id": "ATK-S06-STS-01",
+      "action": null,
+      "purpose": "single GetCallerIdentity confirming the same role used externally",
+      "success_token": "external_identity_event_id",
+      "success_type": "event_id",
+      "handoff_in": "credential_handoff_id",
+      "handoff_out": "same_role_session_id",
+      "handoff_out_meaning": "confirmed same-role external session id"
+    },
+    {
+      "stage": "S07",
+      "fixture_or_resource_id": "ATK-S07-CANARY-01",
+      "action": null,
+      "purpose": "exact key and version canary GetObject only (no ListBucket, write, or delete)",
+      "success_token": "canary_object_sha256",
+      "success_type": "hash",
+      "handoff_in": "same_role_session_id",
+      "handoff_out": "was_bundle_handoff_id",
+      "handoff_out_meaning": "one-time WAS bundle handoff id"
+    },
+    {
+      "stage": "S08",
+      "fixture_or_resource_id": "ATK-S08-WASAUTH-01",
+      "action": "WAS_AUTH",
+      "purpose": "fixed WAS admin authentication action",
+      "success_token": "was_admin_session_hash",
+      "success_type": "hash",
+      "handoff_in": "was_bundle_handoff_id",
+      "handoff_out": "db_read_ticket_id",
+      "handoff_out_meaning": "one-time database read ticket id"
+    },
+    {
+      "stage": "S09",
+      "fixture_or_resource_id": "ATK-S09-ARGUS-Q01",
+      "action": null,
+      "purpose": "fixed ARGUS-Q01 synthetic SELECT; <=10 rows and <=32 KiB checked before return",
+      "success_token": "db_result_manifest_id",
+      "success_type": "manifest_id",
+      "handoff_in": "db_read_ticket_id",
+      "handoff_out": "result_handle_id",
+      "handoff_out_meaning": "result handle carrying row count, byte count, and result hash"
+    },
+    {
+      "stage": "S10",
+      "fixture_or_resource_id": "BEN-S10-DELIVERY-01",
+      "action": null,
+      "purpose": "bounded synthetic delivery over the existing HTTPS path; <=10 rows and <=32 KiB re-checked",
+      "success_token": "delivery_sha256",
+      "success_type": "hash",
+      "handoff_in": "result_handle_id",
+      "handoff_out": null,
+      "handoff_out_meaning": "full-run evidence manifest"
+    }
+  ]
+}

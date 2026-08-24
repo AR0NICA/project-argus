@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://argus.local/schema/d3-handoff-token-v1.json",
+  "title": "ARGUS D3 one-time stage handoff token",
+  "type": "object",
+  "required": ["handoff_schema_version", "handoff_id", "handoff_kind", "run_id", "issued_by_stage", "consumed_by_stage", "predecessor_success_token", "predecessor_success_kind", "issued_at_utc", "ttl_seconds", "not_after_utc", "one_time", "consumed", "harness_injected"],
+  "properties": {
+    "handoff_schema_version": {"const": "argus.d3-handoff/v1"},
+    "handoff_id": {"type": "string", "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"},
+    "handoff_kind": {"enum": ["endpoint_contract_id", "auth_decision_id", "upload_ticket_id", "web_action_context_id", "credential_handoff_id", "same_role_session_id", "was_bundle_handoff_id", "db_read_ticket_id", "result_handle_id"]},
+    "run_id": {"type": "string", "pattern": "^ARGUS-[0-9]{8}-BASE-R[0-9]{2}$"},
+    "issued_by_stage": {"enum": ["S01", "S02", "S03", "S04", "S05", "S06", "S07", "S08", "S09", "harness"]},
+    "consumed_by_stage": {"enum": ["S02", "S03", "S04", "S05", "S06", "S07", "S08", "S09", "S10", null]},
+    "predecessor_success_token": {"type": "string", "minLength": 1, "maxLength": 128},
+    "predecessor_success_kind": {"enum": ["hash", "event_id", "manifest_id"]},
+    "issued_at_utc": {"type": "string", "format": "date-time"},
+    "ttl_seconds": {"const": 120},
+    "not_after_utc": {"type": "string", "format": "date-time"},
+    "one_time": {"const": true},
+    "consumed": {"type": "boolean"},
+    "consumed_at_utc": {"type": ["string", "null"]},
+    "harness_injected": {"type": "boolean"},
+    "result_handle": {"type": "object"}
+  },
+  "additionalProperties": false
+}

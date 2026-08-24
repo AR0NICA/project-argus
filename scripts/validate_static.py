@@ -1,6 +1,7 @@
-"""No-Docker structural checks for the D0A local lab."""
+"""No-Docker structural checks for the D0A local lab and the D3 unit contract."""
 import ast
 import json
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,4 +57,24 @@ runner = (ROOT / "scripts/run-d0a.ps1").read_text(encoding="utf-8")
 for setting in ["while ((Get-Date) -lt $deadline)", "-ErrorAction Stop", "gateway-health-last-error.txt", "failure.json", "compose-ps.txt", "compose-logs.txt", "docker compose port gateway 8080", "gateway-published-port.txt", "127\\.0\\.0\\.1:18080"]:
     if setting not in runner:
         raise SystemExit("runner readiness/diagnostic setting missing: " + setting)
-print("static validation passed: JSON, Python syntax, topology, limits, and DB boundary")
+# D3-UNIT-STAGES contract: the fixtures file must mirror the frozen core authority.
+for file in [ROOT / "runner/d3_core.py", ROOT / "runner/run_d3_unit.py", ROOT / "runner/collect_d3_runtime.py", ROOT / "runner/run_d3_gate.py", ROOT / "scripts/validate_d3_evidence.py", ROOT / "tests/test_d3_contract.py"]:
+    ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
+sys.path.insert(0, str(ROOT / "runner"))
+import d3_core  # noqa: E402
+d3 = json.loads((ROOT / "fixtures/d3-unit-fixtures.json").read_text(encoding="utf-8"))
+if len(d3["stages"]) != len(d3_core.STAGES):
+    raise SystemExit("D3 fixture stage count does not match the core authority")
+if d3["safety_bounds"]["max_result_rows"] > 10 or d3["safety_bounds"]["max_result_bytes"] > 32768:
+    raise SystemExit("D3 fixture violates the 10-row / 32 KiB guard")
+if d3["safety_bounds"]["s01_max_total_requests"] > 12 or d3["safety_bounds"]["max_rps"] > 1 or d3["safety_bounds"]["concurrency"] != 1:
+    raise SystemExit("D3 fixture violates the recon budget or rate/concurrency limits")
+if tuple(d3["allow_list_actions"]) != d3_core.ALLOWED_ACTIONS:
+    raise SystemExit("D3 fixture action allow-list drifted from the core authority")
+if d3_core.MAX_ROWS > 10 or d3_core.MAX_BYTES > 32768:
+    raise SystemExit("D3 core guard constants drifted")
+for fixture_stage, core_stage in zip(d3["stages"], d3_core.STAGES):
+    if (fixture_stage["stage"], fixture_stage["fixture_or_resource_id"], fixture_stage["action"], fixture_stage["success_token"], fixture_stage["handoff_in"], fixture_stage["handoff_out"]) != (core_stage["stage"], core_stage["fixture"], core_stage["action"], core_stage["success_field"], core_stage["handoff_in"], core_stage["handoff_out"]):
+        raise SystemExit("D3 fixture stage contract drifted from the core authority: " + fixture_stage["stage"])
+
+print("static validation passed: JSON, Python syntax, topology, limits, DB boundary, and D3 unit contract")
