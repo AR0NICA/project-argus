@@ -28,7 +28,13 @@ function Remove-AllBucketVersions([string]$Bucket) {
         $page = aws s3api list-object-versions --bucket $Bucket --max-keys 1000 --output json | ConvertFrom-Json
         Assert-NativeSuccess "Version enumeration for $Bucket"
         $objects = @()
-        foreach ($item in @($page.Versions) + @($page.DeleteMarkers)) { $objects += @{ Key = $item.Key; VersionId = $item.VersionId } }
+        foreach ($item in @($page.Versions) + @($page.DeleteMarkers)) {
+            if ($null -eq $item) { continue }
+            if ([string]::IsNullOrWhiteSpace($item.Key) -or [string]::IsNullOrWhiteSpace($item.VersionId)) {
+                throw "Refusing malformed version entry returned for $Bucket."
+            }
+            $objects += @{ Key = $item.Key; VersionId = $item.VersionId }
+        }
         if ($objects.Count -eq 0) { break }
         $payload = @{ Objects = $objects; Quiet = $true } | ConvertTo-Json -Depth 4 -Compress
         $payloadPath = Join-Path $env:TEMP ("argus-delete-" + [guid]::NewGuid().ToString("N") + ".json")
@@ -36,7 +42,9 @@ function Remove-AllBucketVersions([string]$Bucket) {
             [IO.File]::WriteAllText($payloadPath, $payload, [Text.UTF8Encoding]::new($false))
             $deletion = aws s3api delete-objects --bucket $Bucket --delete "file://$payloadPath" --output json | ConvertFrom-Json
             Assert-NativeSuccess "Version deletion for $Bucket"
-            if (@($deletion.Errors).Count -gt 0) { throw "S3 returned per-object deletion errors for $Bucket." }
+            if ($null -ne $deletion.Errors -and @($deletion.Errors).Count -gt 0) {
+                throw "S3 returned per-object deletion errors for $Bucket."
+            }
         } finally { if (Test-Path -LiteralPath $payloadPath) { Remove-Item -LiteralPath $payloadPath -Force } }
     }
 }

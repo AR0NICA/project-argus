@@ -6,7 +6,9 @@ Gate references: D1 `CRR-D1-BASE-R06-2026-08-20`; D2 `CRR-D2-BASE-R2-R3-2026-08-
 This is a sanitized summary. Raw evidence (resource ids, endpoints, CIDRs, ARNs,
 SSM command ids) is retained only in the local, git-ignored evidence root
 `evidence/ARGUS-20260820-BASE-D2/` and
-`evidence/ARGUS-20260824-BASE-D2-R3/`; it is never copied to GitHub or Notion.
+`evidence/ARGUS-20260824-BASE-D2-R3/`. Teardown evidence is retained under
+`evidence/ARGUS-20260824-BASE-TEARDOWN-R01/`; none of these raw artifacts are
+copied to GitHub or Notion.
 
 The final result is composite: R2 supplies the accepted results for KS1, KS2,
 KS3, KS5, and KS6. Its KS4 result is superseded because it used an
@@ -49,10 +51,20 @@ Web test role. It also recorded both `PutBucketPolicy` actions. This correlates
 the real application and same-role CLI probes across baseline, deny, and
 recovery without relying on the administrative CLI as the workload proof.
 
-## Post-test state
+## Post-test and teardown state
 
 All six switches are accepted as recovered to baseline across R2 and R3. After
 R3, the original canary policy was restored exactly, the workload returned to
-healthy, RDS was available, and `terraform plan` reported no changes. The BASE
-stack remains live and protected; teardown and evidence cleanup were not
-authorized or performed.
+healthy, RDS was available, and `terraform plan` reported no changes.
+
+After cross-review and explicit teardown approval, a local pre-teardown state
+export was retained, the versioned evidence/access-log/canary objects, ECR
+images, and the exact Image Builder AMI/snapshot were removed, and a saved
+destroy plan was applied. The plan contained 142 deletes with zero creates,
+updates, or replacements; apply completed with 142 resources destroyed.
+Post-destroy checks found an empty Terraform state and no active BASE EC2, ALB,
+RDS, VPC, CloudTrail, workload buckets, or ECR repositories. The BASE backend
+bucket remains, but its state and lock object versions/delete markers are empty.
+The evidence KMS key remains only in AWS `PendingDeletion` state until its
+scheduled deletion date; this is an expected service-managed residual, not a
+live usable BASE stack.

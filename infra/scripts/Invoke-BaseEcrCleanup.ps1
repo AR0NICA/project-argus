@@ -22,8 +22,15 @@ foreach ($repository in $repositories) {
     while ($true) {
         $images = aws ecr list-images --repository-name $repository --region ap-northeast-2 --filter tagStatus=ANY --max-results 1000 --output json | ConvertFrom-Json
         Assert-NativeSuccess "ECR image enumeration for $repository"
-        $imageIds = @($images.imageIds)
+        $imageIds = @($images.imageIds | Where-Object { $null -ne $_ })
         if ($imageIds.Count -eq 0) { break }
+        foreach ($imageId in $imageIds) {
+            if ([string]::IsNullOrWhiteSpace($imageId.imageDigest) -and [string]::IsNullOrWhiteSpace($imageId.imageTag)) {
+                throw "Refusing malformed image ID returned for $repository."
+            }
+        }
+        $beforeCount = $imageIds.Count
+        $failureCodes = @()
         for ($offset = 0; $offset -lt $imageIds.Count; $offset += 100) {
             $batch = @($imageIds[$offset..([Math]::Min($offset + 99, $imageIds.Count - 1))]) | ConvertTo-Json -Compress
             $payloadPath = Join-Path $env:TEMP ("argus-ecr-delete-" + [guid]::NewGuid().ToString("N") + ".json")
@@ -31,8 +38,20 @@ foreach ($repository in $repositories) {
                 [IO.File]::WriteAllText($payloadPath, $batch, [Text.UTF8Encoding]::new($false))
                 $deletion = aws ecr batch-delete-image --repository-name $repository --region ap-northeast-2 --image-ids "file://$payloadPath" --output json | ConvertFrom-Json
                 Assert-NativeSuccess "ECR image deletion for $repository"
-                if (@($deletion.failures).Count -gt 0) { throw "ECR returned per-image deletion failures for $repository." }
+                if ($null -ne $deletion.failures -and @($deletion.failures).Count -gt 0) {
+                    $failureCodes += @($deletion.failures | ForEach-Object { $_.failureCode } | Where-Object { $_ })
+                }
             } finally { if (Test-Path -LiteralPath $payloadPath) { Remove-Item -LiteralPath $payloadPath -Force } }
+        }
+        if ($failureCodes.Count -gt 0) {
+            $remaining = aws ecr list-images --repository-name $repository --region ap-northeast-2 --filter tagStatus=ANY --max-results 1000 --output json | ConvertFrom-Json
+            Assert-NativeSuccess "ECR image re-enumeration for $repository"
+            $remainingCount = @($remaining.imageIds | Where-Object { $null -ne $_ }).Count
+            if ($remainingCount -ge $beforeCount) {
+                $codes = @($failureCodes | Sort-Object -Unique) -join ","
+                throw "ECR deletion made no progress for $repository; failure codes: $codes."
+            }
+            Write-Output "Retrying $remainingCount referenced images in $repository after deleting their manifest list."
         }
     }
 }

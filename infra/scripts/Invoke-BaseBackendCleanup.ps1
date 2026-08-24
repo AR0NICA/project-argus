@@ -13,6 +13,7 @@ if (-not $BaseDestroyConfirmed) { throw "Backend cleanup requires explicit confi
 $stateFile = Get-Item -LiteralPath $BaseStateExport
 if ($stateFile.Length -lt 2) { throw "The BASE state export is empty." }
 $bucket = "argus-terraform-state-ap-northeast-2-962419263587"
+$allowedKeys = @("argus/base/terraform.tfstate", "argus/base/terraform.tfstate.tflock")
 $env:AWS_PROFILE = $AwsProfile
 $identity = aws sts get-caller-identity --output json | ConvertFrom-Json
 Assert-NativeSuccess "AWS identity check"
@@ -25,7 +26,13 @@ while ($true) {
     $page = aws s3api list-object-versions --bucket $bucket --max-keys 1000 --output json | ConvertFrom-Json
     Assert-NativeSuccess "Backend version enumeration"
     $objects = @()
-    foreach ($item in @($page.Versions) + @($page.DeleteMarkers)) { $objects += @{ Key = $item.Key; VersionId = $item.VersionId } }
+    foreach ($item in @($page.Versions) + @($page.DeleteMarkers)) {
+        if ($null -eq $item) { continue }
+        if ($item.Key -notin $allowedKeys -or [string]::IsNullOrWhiteSpace($item.VersionId)) {
+            throw "Refusing unexpected or malformed backend version entry."
+        }
+        $objects += @{ Key = $item.Key; VersionId = $item.VersionId }
+    }
     if ($objects.Count -eq 0) { break }
     $payloadPath = Join-Path $env:TEMP ("argus-backend-delete-" + [guid]::NewGuid().ToString("N") + ".json")
     try {
@@ -33,7 +40,9 @@ while ($true) {
         [IO.File]::WriteAllText($payloadPath, $payload, [Text.UTF8Encoding]::new($false))
         $deletion = aws s3api delete-objects --bucket $bucket --delete "file://$payloadPath" --output json | ConvertFrom-Json
         Assert-NativeSuccess "Backend version deletion"
-        if (@($deletion.Errors).Count -gt 0) { throw "S3 returned per-object backend deletion errors." }
+        if ($null -ne $deletion.Errors -and @($deletion.Errors).Count -gt 0) {
+            throw "S3 returned per-object backend deletion errors."
+        }
     } finally { if (Test-Path -LiteralPath $payloadPath) { Remove-Item -LiteralPath $payloadPath -Force } }
 }
 Write-Output "All backend object versions/delete markers were removed after state export, destroy confirmation, and cross-review $CrossReviewReference."
