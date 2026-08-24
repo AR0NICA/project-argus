@@ -1,11 +1,18 @@
 # D2-SAFETY — kill-switch runtime verification result
 
-Status: **PASS (6/6)** · Date: 2026-08-20 · Environment: BASE · Goal: safety controls
-Gate reference: D1 CrossReviewRef `CRR-D1-BASE-R06-2026-08-20` (D2 is a separate approval gate).
+Status: **PASS (6/6, composite)** · Date: 2026-08-24 · Environment: BASE · Goal: safety controls
+Gate references: D1 `CRR-D1-BASE-R06-2026-08-20`; D2 `CRR-D2-BASE-R2-R3-2026-08-24`.
 
 This is a sanitized summary. Raw evidence (resource ids, endpoints, CIDRs, ARNs,
 SSM command ids) is retained only in the local, git-ignored evidence root
-`evidence/ARGUS-20260820-BASE-D2/`; it is never copied to GitHub or Notion.
+`evidence/ARGUS-20260820-BASE-D2/` and
+`evidence/ARGUS-20260824-BASE-D2-R3/`; it is never copied to GitHub or Notion.
+
+The final result is composite: R2 supplies the accepted results for KS1, KS2,
+KS3, KS5, and KS6. Its KS4 result is superseded because it used an
+administrative actor and denied only `s3:GetObject`, while the deployed Web
+workload requests a fixed `VersionId` and therefore requires
+`s3:GetObjectVersion`. R3 reran only KS4 against that actual path.
 
 ## What D2 proves
 
@@ -22,22 +29,30 @@ test role.
 | KS1 | Remove approved CIDR from the ALB security group | revoke/authorize the HTTPS ingress rule | client HTTPS times out (blocked) | HTTPS reachable again |
 | KS2 | Edge/WAF block-all | halt the ModSecurity gateway container (nginx config is baked/read-only, so a container-level block is the reversible equivalent of a block-all rule) | edge refuses all requests | edge serves normally |
 | KS3 | Detach the web test role | disassociate/associate the web instance profile | no instance profile associated | role re-associated |
-| KS4 | Block exact canary `GetObject` | add/remove an explicit Deny statement on the canary object | GetObject → AccessDenied | GetObject → OK |
+| KS4 | Block the exact versioned canary workload path | add/remove an explicit `s3:GetObjectVersion` Deny for the fixed key and VersionId | `/d1/observe` 200 → 503 and Web-role call → explicit AccessDenied | `/d1/observe` 200 and Web-role call succeeds |
 | KS5 | Remove WAS TCP 8090 rule | revoke/authorize the admin-API ingress rule | rule absent | rule restored |
 | KS6 | Stop the vulnerable app | `systemctl stop/start` the WAS service (no `ARGUS_LAB_MODE` flag exists, so the switch is realized as stopping the vulnerable app) | service inactive, health unreachable | service active, health 200 |
 
 ## Independent evidence-collection persists (D2 core invariant)
 
-CloudTrail recorded every kill-switch action within the test window: the two
+For R2, CloudTrail recorded every accepted kill-switch action within the test window: the two
 security-group revoke/authorize pairs (KS1, KS5), the bucket-policy changes
-(KS4), the instance-profile disassociate/associate pair (KS3), and the SSM
-commands (KS2, KS6). Crucially, **KS3 detached the web test role and CloudTrail
+(the superseded KS4 attempt), the instance-profile disassociate/associate pair
+(KS3), and the SSM commands (KS2, KS6). Crucially, **KS3 detached the web test role and CloudTrail
 still recorded the action** — demonstrating that the central evidence path does
 not depend on the vulnerable application session or the EC2 test role, exactly as
 the safety contract requires.
 
+For R3 KS4, CloudTrail recorded six unique scoped S3 `GetObject` data events for
+the exact VersionId: four successes and two `AccessDenied` events, all from the
+Web test role. It also recorded both `PutBucketPolicy` actions. This correlates
+the real application and same-role CLI probes across baseline, deny, and
+recovery without relying on the administrative CLI as the workload proof.
+
 ## Post-test state
 
-All six switches recovered to baseline; the workload returned to healthy. The two
-security-group rules edited out-of-band during KS1/KS5 were reconciled back under
-Terraform management (`terraform plan` = no changes).
+All six switches are accepted as recovered to baseline across R2 and R3. After
+R3, the original canary policy was restored exactly, the workload returned to
+healthy, RDS was available, and `terraform plan` reported no changes. The BASE
+stack remains live and protected; teardown and evidence cleanup were not
+authorized or performed.
