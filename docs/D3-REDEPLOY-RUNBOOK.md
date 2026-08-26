@@ -18,9 +18,9 @@ phase without a reviewed saved plan.
 - **Protective flags already set** in `infra/base/terraform.tfvars`:
   `teardown_authorized=false`, `teardown_mode="protected"`, no
   `evidence_cleanup_authorized`, no `evidence_cross_review_reference`. Leave them.
-- **Do not reuse old artifacts.** Delete/ignore the stale saved plans
-  `infra/base/base.tfplan`, `destroy.tfplan`, `destroy2.tfplan`. Build fresh
-  plans only.
+- **Do not reuse old artifacts.** Ignore stale saved plans such as
+  `infra/base/base.tfplan`, `infra/base/base-destroy.tfplan`, and any prior
+  `destroy*.tfplan`. Build and review a fresh saved plan for each phase.
 
 ## 1. Stale prerequisites the teardown removed (must be refreshed)
 
@@ -38,7 +38,7 @@ The backend state bucket `argus-terraform-state-...-962419263587` still exists
 ## 2. Preflight (read-only)
 
 ```powershell
-$env:AWS_PROFILE = "PowerClaude"
+$env:AWS_PROFILE = "PowerCodex"
 aws sts get-caller-identity
 aws configure get region   # expect ap-northeast-2
 ```
@@ -97,6 +97,14 @@ one **independent** source raw evidence (CloudTrail, VPC Flow Logs, RDS
 audit/general, S3 data event, ALB access, Nginx/ModSecurity, auditd — never the
 web/was app logs) into `<evidence-root>/<run_id>/raw/`.
 
+The operator adapter must preserve the source-native record, not a prose
+summary: CloudTrail/S3 as JSON with the matching `eventID`; Flow Logs as the
+native versioned row; ALB access as the native access-log row; auditd with its
+`audit(epoch:serial)` id; Nginx/ModSecurity as a timestamped JSON export; and RDS
+audit/general as the timestamped row containing `ARGUS-Q01`. The descriptor
+`native_record_id`, timestamp, anchors, and SHA-256 must resolve to that exact
+raw record. Raw files are secret-scanned and bounded to 1 MiB by the validator.
+
 Assemble and gate the runtime evidence (no AWS calls in these steps):
 
 ```powershell
@@ -107,6 +115,8 @@ python runner/run_d3_gate.py --evidence-root evidence --run-id ARGUS-<UTCDATE>-B
 Use `fixtures/d3-runtime-input.example.json` as the input template. The gate
 accepts only `proof_kind=runtime` with per-stage independent-source
 corroboration; `--plan-only`/local-synthetic proof is never D3 completion.
+Each run ID is immutable: the collector refuses to overwrite any existing
+manifest, provenance, event, or handoff artifact. Use a new run ID for a retry.
 
 ## 6. Close-out
 

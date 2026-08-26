@@ -8,7 +8,9 @@ It performs no AWS calls and replays nothing.
 import argparse
 import hashlib
 import json
+import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -181,6 +183,7 @@ def validate_handoff_record(record, run_id):
         fail("harness-injected handoff must be issued by the harness")
     if not record["harness_injected"] and record["issued_by_stage"] not in core.SPEC:
         fail("non-injected handoff must be issued by a real stage")
+    core.assert_no_secret(record)
 
 
 def parse_window(window):
@@ -195,8 +198,11 @@ def parse_window(window):
 def exported_raw(directory, relative_path):
     if not isinstance(relative_path, str) or not relative_path or Path(relative_path).is_absolute():
         fail("runtime evidence path must be a non-empty relative path")
+    relative = Path(relative_path)
+    if not relative.parts or relative.parts[0] != "raw":
+        fail("runtime evidence path must be under the run's raw directory")
     root = directory.resolve()
-    path = (root / relative_path).resolve()
+    path = (root / relative).resolve()
     try:
         path.relative_to(root)
     except ValueError as exc:
@@ -212,6 +218,102 @@ def exported_raw(directory, relative_path):
     except UnicodeDecodeError as exc:
         raise core.D3Error("runtime exported raw evidence must be UTF-8") from exc
     return raw, text
+
+
+def matching_line(text, anchors, markers, stage, source):
+    matches = [line for line in text.splitlines() if all(value in line for value in anchors + list(markers))]
+    if not matches:
+        fail(stage + " runtime raw evidence has no single native record containing all anchors for " + source)
+    return matches[0]
+
+
+def validate_native_time(stage, source, descriptor_time, native_time, window_start, window_end):
+    if not window_start <= native_time <= window_end:
+        fail(stage + " " + source + " native timestamp is outside the run window")
+    if abs((native_time - descriptor_time).total_seconds()) > 1:
+        fail(stage + " " + source + " descriptor timestamp does not match the native record")
+
+
+def json_records(text, stage, source):
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise core.D3Error(stage + " " + source + " raw evidence must be native JSON") from exc
+    if isinstance(value, dict) and isinstance(value.get("Records"), list):
+        return value["Records"]
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value]
+    fail(stage + " " + source + " raw JSON has no records")
+
+
+def validate_cloudtrail(stage, source, text, record, descriptor_time, window_start, window_end):
+    matches = [item for item in json_records(text, stage, source) if isinstance(item, dict) and item.get("eventID") == record["native_record_id"]]
+    if len(matches) != 1:
+        fail(stage + " " + source + " must contain exactly one matching eventID")
+    item = matches[0]
+    native_text = json.dumps(item, separators=(",", ":"), sort_keys=True)
+    if any(anchor not in native_text for anchor in record["anchors"]):
+        fail(stage + " " + source + " anchors do not resolve to the matching native event")
+    native_time = core.parse_utc(item.get("eventTime", ""))
+    validate_native_time(stage, source, descriptor_time, native_time, window_start, window_end)
+    if stage == "S06":
+        if item.get("eventSource") != "sts.amazonaws.com" or item.get("eventName") != "GetCallerIdentity":
+            fail("S06 CloudTrail proof must be sts:GetCallerIdentity")
+    elif stage == "S07":
+        params = item.get("requestParameters")
+        if item.get("eventSource") != "s3.amazonaws.com" or item.get("eventName") != "GetObject" or not isinstance(params, dict) or not params.get("key") or not params.get("versionId"):
+            fail("S07 CloudTrail/S3 proof must be exact key+version GetObject")
+
+
+def validate_line_source(stage, source, text, record, descriptor_time, window_start, window_end):
+    anchors = record["anchors"]
+    line = matching_line(text, anchors, SOURCE_MARKERS[source], stage, source)
+    if source == "alb_access":
+        fields = line.split()
+        if len(fields) < 3 or fields[0] not in {"http", "https", "h2", "ws", "wss"}:
+            fail(stage + " ALB proof is not a native access-log row")
+        native_time = core.parse_utc(fields[1])
+    elif source == "auditd":
+        match = re.search(r"audit\((\d+(?:\.\d+)?):\d+\)", line)
+        if not match:
+            fail(stage + " auditd proof lacks a native audit(epoch:serial) id")
+        native_time = datetime.fromtimestamp(float(match.group(1)), tz=timezone.utc)
+    elif source == "flow_logs":
+        fields = line.split()
+        if len(fields) < 14 or not fields[0].isdigit() or not fields[2].startswith("eni-"):
+            fail(stage + " Flow Logs proof is not a native versioned row")
+        try:
+            start_epoch, end_epoch = int(fields[10]), int(fields[11])
+        except ValueError as exc:
+            raise core.D3Error(stage + " Flow Logs proof has invalid epoch fields") from exc
+        if fields[12] not in {"ACCEPT", "REJECT"} or fields[13] not in {"OK", "NODATA", "SKIPDATA"}:
+            fail(stage + " Flow Logs proof has invalid action/log-status")
+        flow_start = datetime.fromtimestamp(start_epoch, tz=timezone.utc)
+        flow_end = datetime.fromtimestamp(end_epoch, tz=timezone.utc)
+        if flow_end < flow_start or not flow_start <= descriptor_time <= flow_end:
+            fail(stage + " Flow Logs descriptor time is outside the native row interval")
+        if flow_end < window_start or flow_start > window_end:
+            fail(stage + " Flow Logs native interval is outside the run window")
+        return
+    elif source == "nginx_modsecurity":
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise core.D3Error(stage + " Nginx/ModSecurity proof must be a timestamped JSON export") from exc
+        if not isinstance(item, dict):
+            fail(stage + " Nginx/ModSecurity proof must be a JSON object")
+        timestamp = item.get("event_time_utc") or item.get("timestamp") or item.get("time_iso8601")
+        native_time = core.parse_utc(timestamp)
+    elif source == "rds_audit":
+        match = re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z", line)
+        if not match or "ARGUS-Q01" not in line:
+            fail(stage + " RDS proof must be a timestamped native ARGUS-Q01 row")
+        native_time = core.parse_utc(match.group(0))
+    else:
+        fail(stage + " has no source-native validator for " + source)
+    validate_native_time(stage, source, descriptor_time, native_time, window_start, window_end)
 
 
 def validate_runtime_source(directory, stage, record, window_start, window_end):
@@ -231,18 +333,23 @@ def validate_runtime_source(directory, stage, record, window_start, window_end):
         fail(stage + " runtime anchors invalid")
     if record["native_record_id"] not in anchors:
         fail(stage + " runtime native record id must be one of the anchors")
-    event_time = core.parse_utc(record["event_time_utc"])
-    if not window_start <= event_time <= window_end:
+    descriptor_time = core.parse_utc(record["event_time_utc"])
+    if not window_start <= descriptor_time <= window_end:
         fail(stage + " runtime source time is outside the run window")
     raw, text = exported_raw(directory, record["evidence_path"])
     if hashlib.sha256(raw).hexdigest() != record["content_sha256"]:
         fail(stage + " runtime exported raw evidence hash mismatch")
+    core.assert_no_secret({"runtime_raw": text})
     for marker in SOURCE_MARKERS[source]:
         if marker not in text:
             fail(stage + " runtime raw evidence lacks the native source marker for " + source)
     for anchor in anchors:
         if anchor not in text:
             fail(stage + " runtime raw evidence is missing a declared anchor")
+    if source in {"cloudtrail", "s3_data_event"}:
+        validate_cloudtrail(stage, source, text, record, descriptor_time, window_start, window_end)
+    else:
+        validate_line_source(stage, source, text, record, descriptor_time, window_start, window_end)
     return source
 
 
@@ -325,7 +432,9 @@ def validate(evidence_root, run_id, checkout):
 
     if sorted(injected_kinds) != sorted(manifest["harness_injected_handoffs"]):
         fail("manifest harness injections do not match the handoff evidence")
-    expected_golden = (not injected_kinds and stages == core.STAGE_ORDER and manifest["proof_kind"] == "runtime")
+    # This validator is scoped to D3-UNIT-STAGES / R0-UNIT. D4 owns the only
+    # uninjected end-to-end golden-chain accounting.
+    expected_golden = False
     if manifest["counts_toward_golden_chain"] != expected_golden:
         fail("counts_toward_golden_chain does not match the evidence")
     for event in events:

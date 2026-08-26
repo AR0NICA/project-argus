@@ -60,7 +60,7 @@ def build_event(run_id, stage, obs):
         "handoff_out_id": obs["handoff_out_id"],
         "handoff_injected": bool(obs["harness_injected"]),
         "harness_injected": bool(obs["harness_injected"]),
-        "counts_toward_golden_chain": True,
+        "counts_toward_golden_chain": False,
         "runtime_sources": obs["runtime_sources"],
     }
     if stage in ("S09", "S10"):
@@ -99,7 +99,9 @@ def assemble(data, evidence_root, checkout):
         if spec["handoff_in"] and obs.get("harness_injected"):
             injected.append(spec["handoff_in"])
 
-    counts_golden = (not injected and stages == core.STAGE_ORDER)
+    # D3 R0-UNIT is a unit-stage proof. Even an uninjected all-stage runtime
+    # export is not the separate D4 golden-chain execution.
+    counts_golden = False
     for event in events:
         event["counts_toward_golden_chain"] = counts_golden
 
@@ -121,11 +123,16 @@ def assemble(data, evidence_root, checkout):
     }
 
     directory = Path(evidence_root) / run_id
-    directory.mkdir(parents=True, exist_ok=True)
-    directory.joinpath("run-manifest.json").write_text(json.dumps(manifest, separators=(",", ":"), sort_keys=True), encoding="utf-8")
-    directory.joinpath("provenance.json").write_text(json.dumps(run_d3_unit.build_provenance(run_id), separators=(",", ":"), sort_keys=True), encoding="utf-8")
-    run_d3_unit.write_jsonl(directory / "events.jsonl", events)
-    run_d3_unit.write_jsonl(directory / "handoffs.jsonl", handoffs)
+    if not directory.is_dir():
+        raise core.D3Error("runtime run directory is missing; place raw evidence under the run id first")
+    targets = [directory / name for name in ("run-manifest.json", "provenance.json", "events.jsonl", "handoffs.jsonl")]
+    existing = [str(path) for path in targets if path.exists()]
+    if existing:
+        raise core.D3Error("runtime evidence is immutable; derived artifact already exists: " + ", ".join(existing))
+    run_d3_unit.write_new_text(targets[0], json.dumps(manifest, separators=(",", ":"), sort_keys=True))
+    run_d3_unit.write_new_text(targets[1], json.dumps(run_d3_unit.build_provenance(run_id), separators=(",", ":"), sort_keys=True))
+    run_d3_unit.write_jsonl(targets[2], events)
+    run_d3_unit.write_jsonl(targets[3], handoffs)
     return validate_d3_evidence.validate(Path(evidence_root), run_id, checkout)
 
 

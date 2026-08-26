@@ -23,10 +23,35 @@ WINDOW = {"start_utc": "2026-08-24T00:00:00Z", "end_utc": "2026-08-24T01:00:00Z"
 
 def make_source(directory, stage, run_id, event_time_utc, source=None, corrupt=False):
     src = source if source is not None else sorted(validator.RUNTIME_SOURCES[stage])[0]
-    native = "NID-" + stage
-    anchors = [native, run_id]
-    markers = " ".join(validator.SOURCE_MARKERS.get(src, ()))
-    text = markers + " " + " ".join(anchors) + " end"
+    if src in {"cloudtrail", "s3_data_event"}:
+        native = "11111111-1111-4111-8111-" + ("0" * 11) + stage[-1]
+        event_name = "GetCallerIdentity" if stage == "S06" else "GetObject"
+        event_source = "sts.amazonaws.com" if stage == "S06" else "s3.amazonaws.com"
+        item = {"eventID": native, "eventTime": event_time_utc, "eventSource": event_source, "eventName": event_name}
+        if stage == "S07":
+            item["requestParameters"] = {"key": "canary.txt", "versionId": "version-01"}
+        text = json.dumps({"Records": [item]}, separators=(",", ":"))
+    elif src == "flow_logs":
+        native = "eni-0abc" + stage.lower()
+        epoch = int(core.parse_utc(event_time_utc).timestamp())
+        text = "2 123456789012 %s 10.0.1.10 10.0.2.20 51000 443 6 1 128 %d %d ACCEPT OK" % (native, epoch - 1, epoch + 1)
+    elif src == "alb_access":
+        native = "Root=1-abcdef01-" + ("0" * 23) + stage[-1]
+        text = 'https %s app/argus/123 10.0.0.1:443 10.0.1.1:8080 0 0 0 200 200 1 1 "GET / HTTP/1.1" "test" - - arn "-" "-" 0 %s' % (event_time_utc, native)
+    elif src == "auditd":
+        epoch = core.parse_utc(event_time_utc).timestamp()
+        native = "audit(%.3f:%d)" % (epoch, int(stage[-2:]))
+        text = "type=SYSCALL msg=%s arch=c000003e syscall=1 success=yes" % native
+    elif src == "nginx_modsecurity":
+        native = "NGINX-REQ-" + stage
+        text = json.dumps({"source": "nginx", "event_time_utc": event_time_utc, "request_id": native}, separators=(",", ":"))
+    elif src == "rds_audit":
+        native = "RDS-THREAD-" + stage
+        text = "%s,%s,QUERY,ARGUS-Q01,SELECT synthetic_value" % (event_time_utc, native)
+    else:
+        native = "NID-" + stage
+        text = native
+    anchors = [native]
     rel = "raw/%s-%s.log" % (stage, src)
     raw_path = directory / rel
     raw_path.parent.mkdir(parents=True, exist_ok=True)
@@ -232,6 +257,13 @@ class D3EvidenceTests(unittest.TestCase):
             with self.assertRaises(core.D3Error):
                 validator.validate(root, RUN, ROOT)
 
+    def test_local_runner_refuses_existing_run_id(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "evidence"
+            (root / RUN).mkdir(parents=True)
+            with self.assertRaises(SystemExit):
+                runner.main(["--run-id", RUN, "--stages", "S01", "--evidence-root", str(root), "--start-utc", WINDOW["start_utc"]])
+
 
 class D3RuntimeTests(unittest.TestCase):
     def _setup(self, temp, stages):
@@ -255,6 +287,25 @@ class D3RuntimeTests(unittest.TestCase):
             data = runtime_input(bundle, directory, RUN)
             self.assertIn("2 stage(s)", collect.assemble(data, root, ROOT))
 
+    def test_runtime_all_stages_never_counts_as_d4_golden(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "evidence"
+            directory = root / RUN
+            directory.mkdir(parents=True)
+            bundle = core.run_unit(RUN, list(core.STAGE_ORDER), harness_allowed=False, start_utc=START)
+            result = collect.assemble(runtime_input(bundle, directory, RUN), root, ROOT)
+            manifest = json.loads((directory / "run-manifest.json").read_text())
+            self.assertFalse(manifest["counts_toward_golden_chain"])
+            self.assertIn("golden_chain=False", result)
+
+    def test_every_runtime_source_requires_native_shape(self):
+        cases = {"alb_access": "S01", "nginx_modsecurity": "S02", "auditd": "S05", "flow_logs": "S08", "cloudtrail": "S06", "s3_data_event": "S07", "rds_audit": "S09"}
+        for source, stage in cases.items():
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as temp:
+                root, directory, bundle = self._setup(temp, [stage])
+                data = runtime_input(bundle, directory, RUN, source_override=source)
+                self.assertIn("proof=runtime", collect.assemble(data, root, ROOT))
+
     def test_runtime_rejects_app_source(self):
         with tempfile.TemporaryDirectory() as temp:
             root, directory, bundle = self._setup(temp, ["S06"])
@@ -266,6 +317,32 @@ class D3RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root, directory, bundle = self._setup(temp, ["S06"])
             data = runtime_input(bundle, directory, RUN, corrupt=True)
+            with self.assertRaises(core.D3Error):
+                collect.assemble(data, root, ROOT)
+
+    def test_runtime_raw_secret_rejected_after_valid_hash(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, bundle = self._setup(temp, ["S06"])
+            data = runtime_input(bundle, directory, RUN)
+            descriptor = data["observations"]["S06"]["runtime_sources"][0]
+            raw_path = directory / descriptor["evidence_path"]
+            item = json.loads(raw_path.read_text())
+            item["Records"][0]["leak"] = "AKIAABCDEFGHIJKLMNOP"
+            raw_path.write_text(json.dumps(item, separators=(",", ":")), encoding="utf-8")
+            descriptor["content_sha256"] = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+            with self.assertRaises(core.D3Error):
+                collect.assemble(data, root, ROOT)
+
+    def test_runtime_wrong_cloudtrail_operation_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, bundle = self._setup(temp, ["S06"])
+            data = runtime_input(bundle, directory, RUN)
+            descriptor = data["observations"]["S06"]["runtime_sources"][0]
+            raw_path = directory / descriptor["evidence_path"]
+            item = json.loads(raw_path.read_text())
+            item["Records"][0]["eventName"] = "ListBuckets"
+            raw_path.write_text(json.dumps(item, separators=(",", ":")), encoding="utf-8")
+            descriptor["content_sha256"] = hashlib.sha256(raw_path.read_bytes()).hexdigest()
             with self.assertRaises(core.D3Error):
                 collect.assemble(data, root, ROOT)
 
@@ -294,6 +371,14 @@ class D3RuntimeTests(unittest.TestCase):
             (directory / "run-manifest.json").write_text(json.dumps(manifest, separators=(",", ":"), sort_keys=True))
             with self.assertRaises(core.D3Error):
                 validator.validate(root, RUN, ROOT)
+
+    def test_runtime_collector_refuses_existing_derived_artifacts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, bundle = self._setup(temp, ["S06"])
+            data = runtime_input(bundle, directory, RUN)
+            collect.assemble(data, root, ROOT)
+            with self.assertRaises(core.D3Error):
+                collect.assemble(data, root, ROOT)
 
     def test_synthetic_with_runtime_sources_rejected(self):
         with tempfile.TemporaryDirectory() as temp:

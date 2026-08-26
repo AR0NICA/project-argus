@@ -36,8 +36,16 @@ def build_provenance(run_id):
     }
 
 
+def write_new_text(path, content):
+    try:
+        with path.open("x", encoding="utf-8", newline="") as stream:
+            stream.write(content)
+    except FileExistsError as exc:
+        raise d3_core.D3Error("evidence artifact already exists: " + str(path)) from exc
+
+
 def write_jsonl(path, rows):
-    path.write_text("".join(json.dumps(row, separators=(",", ":"), sort_keys=True) + "\n" for row in rows), encoding="utf-8")
+    write_new_text(path, "".join(json.dumps(row, separators=(",", ":"), sort_keys=True) + "\n" for row in rows))
 
 
 def main(argv=None):
@@ -65,11 +73,14 @@ def main(argv=None):
 
     evidence_root = Path(args.evidence_root)
     directory = evidence_root / args.run_id
-    directory.mkdir(parents=True, exist_ok=True)
-    directory.joinpath("run-manifest.json").write_text(json.dumps(bundle["manifest"], separators=(",", ":"), sort_keys=True), encoding="utf-8")
-    directory.joinpath("provenance.json").write_text(json.dumps(build_provenance(args.run_id), separators=(",", ":"), sort_keys=True), encoding="utf-8")
-    write_jsonl(directory / "events.jsonl", bundle["events"])
-    write_jsonl(directory / "handoffs.jsonl", bundle["handoffs"])
+    try:
+        directory.mkdir(parents=True, exist_ok=False)
+        write_new_text(directory / "run-manifest.json", json.dumps(bundle["manifest"], separators=(",", ":"), sort_keys=True))
+        write_new_text(directory / "provenance.json", json.dumps(build_provenance(args.run_id), separators=(",", ":"), sort_keys=True))
+        write_jsonl(directory / "events.jsonl", bundle["events"])
+        write_jsonl(directory / "handoffs.jsonl", bundle["handoffs"])
+    except (FileExistsError, d3_core.D3Error) as exc:
+        raise SystemExit("D3 unit runner rejected: evidence run id is immutable; use a new run id (" + str(exc) + ")") from exc
 
     result = validate_d3_evidence.validate(evidence_root, args.run_id, ROOT)
     print(result)

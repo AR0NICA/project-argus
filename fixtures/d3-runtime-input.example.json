@@ -1,5 +1,5 @@
 {
-  "_note": "TEMPLATE ONLY. Shows the shape of the operator-exported runtime input for collect_d3_runtime.py. Replace every placeholder with values observed from a live BASE R0-UNIT run. Success tokens, handoff ids, and content hashes come from the live run; independent raw-evidence files must already sit under <evidence-root>/<run_id>/ at the relative evidence_path shown. This template is not a validation fixture and will not pass the validator as written.",
+  "_note": "TEMPLATE ONLY. Shows the shape of the operator-exported runtime input for collect_d3_runtime.py. Replace every placeholder with values observed from a live BASE R0-UNIT run. Success tokens, handoff ids, and content hashes come from the live run; source-native independent evidence files must already sit under <evidence-root>/<run_id>/raw/ at the relative evidence_path shown. A run id is immutable after any derived artifact is written; use a new run id for retries. This template is not a validation fixture and will not pass the validator as written.",
   "input_version": "argus.d3-runtime-input/v1",
   "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
   "run_window": {"start_utc": "YYYY-MM-DDTHH:MM:SSZ", "end_utc": "YYYY-MM-DDTHH:MM:SSZ"},

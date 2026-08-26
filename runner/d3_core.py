@@ -261,7 +261,7 @@ def _build_event(run_id, stage, seq, event_type, result, request_id, fixture, so
         "handoff_out_id": handoff_out_id,
         "handoff_injected": bool(harness_injected),
         "harness_injected": bool(harness_injected),
-        "counts_toward_golden_chain": True,
+        "counts_toward_golden_chain": False,
     }
     if extra:
         event.update(extra)
@@ -275,7 +275,7 @@ def run_unit(run_id, stages, harness_allowed, start_utc):
     A stage never proceeds without a validated one-time predecessor handoff. Any
     handoff the approval harness injects is recorded. This is the LOCAL SYNTHETIC
     runner: it always emits proof_kind=local_synthetic and can never produce a
-    golden chain — golden runtime evidence only comes from collect_d3_runtime.
+    golden chain. R0-UNIT evidence is never a D4 golden-chain execution.
     """
     proof_kind = "local_synthetic"
     validate_run_id(run_id)
@@ -349,10 +349,9 @@ def run_unit(run_id, stages, harness_allowed, start_utc):
             adapter = {"correlation": {"adapter": "disabled_not_evaluated", "crs_fields_consumed": False, "evaluation_status": "disabled_not_evaluated"}}
             events.append(_build_event(run_id, stage, 2, "hybridnb_adapter", "not_evaluated", request_id, spec["fixture"], "argus_web", "hybridnb_interface", "none", content_sha, spec["success_type"], success_value, handoff_in_id, None, harness_injected, now, adapter))
 
-    # A run is golden-chain-eligible only against live runtime evidence with no
-    # harness injection and the full ordered chain. Local synthetic proof never
-    # counts toward a D4 golden-chain success.
-    counts_golden = (len(harness.injected) == 0 and stages == STAGE_ORDER and proof_kind == "runtime")
+    # R0-UNIT proves unit-stage contracts only. It never counts toward the D4
+    # uninjected golden-chain execution, regardless of proof kind or coverage.
+    counts_golden = False
     for event in events:
         event["counts_toward_golden_chain"] = counts_golden
 

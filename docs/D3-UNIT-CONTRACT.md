@@ -59,6 +59,16 @@ expiry, cross-run use, wrong-kind, and wrong-consuming-stage are all rejected.
   Flow Logs, RDS audit, S3 data event, ALB access, Nginx/ModSecurity, auditd —
   never the web/was app logs). Required for real D3 close-out.
 
+Both proof kinds are R0-UNIT evidence and therefore always carry
+`counts_toward_golden_chain=false`. D4 owns the separate uninjected full-chain
+run; a complete S01-S10 D3 runtime export cannot substitute for it.
+
+Runtime raw evidence is validated in its source-native shape (CloudTrail/S3
+JSON identity and operation, Flow Log fields/window, ALB/auditd timestamps,
+timestamped Nginx/ModSecurity export, and RDS `ARGUS-Q01` row). The validator
+also scans raw files and handoff records for secret-like material. Evidence run
+IDs are immutable; collectors refuse to overwrite existing derived artifacts.
+
 ## Files
 
 - `fixtures/d3-unit-fixtures.json` — frozen contract, mirrored from the core authority.
