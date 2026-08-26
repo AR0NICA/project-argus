@@ -74,6 +74,8 @@ def runtime_input(bundle, directory, run_id, source_override=None, corrupt=False
         obs = {"event_time_utc": event["event_time_utc"], "success_token_kind": event["success_token_kind"], "success_token_value": event["success_token_value"], "content_sha256": event["content_sha256"], "handoff_in_id": event["handoff_in_id"], "handoff_out_id": event["handoff_out_id"], "harness_injected": event["harness_injected"], "runtime_sources": [record]}
         if stage in ("S09", "S10"):
             obs["result_guard"] = event["result_guard"]
+        if "request_count" in event:
+            obs["request_count"] = event["request_count"]
         observations[stage] = obs
     return {"input_version": collect.INPUT_VERSION, "run_id": run_id, "run_window": WINDOW, "stages": stages, "observations": observations, "handoffs": bundle["handoffs"]}
 
@@ -151,6 +153,22 @@ class D3EngineTests(unittest.TestCase):
     def test_stage_order_enforced(self):
         with self.assertRaises(core.D3Error):
             core.run_unit(RUN, ["S03", "S02"], harness_allowed=True, start_utc=START)
+
+    def test_s01_request_budget_guard(self):
+        core.guard_s01_requests(1)
+        core.guard_s01_requests(core.S01_MAX_REQUESTS)
+        for bad in (0, -1, core.S01_MAX_REQUESTS + 1, None, "3", True):
+            with self.assertRaises(core.GuardError):
+                core.guard_s01_requests(bad)
+
+    def test_hybridnb_freeze_guard(self):
+        core.assert_hybridnb_frozen({"correlation": dict(core.HYBRIDNB_ADAPTER)})
+        with self.assertRaises(core.D3Error):
+            core.assert_hybridnb_frozen({"correlation": {"model_score": 0.9}})
+        with self.assertRaises(core.D3Error):
+            core.assert_hybridnb_frozen({"correlation": {"evaluation_status": "blocked"}})
+        with self.assertRaises(core.D3Error):
+            core.assert_hybridnb_frozen({"nested": [{"threshold": 0.5}]})
 
 
 class D3EvidenceTests(unittest.TestCase):
@@ -257,6 +275,55 @@ class D3EvidenceTests(unittest.TestCase):
             with self.assertRaises(core.D3Error):
                 validator.validate(root, RUN, ROOT)
 
+    def test_s01_over_budget_request_count_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, _ = materialize(temp, RUN, ["S01"], harness=True)
+            events = [json.loads(x) for x in (directory / "events.jsonl").read_text().splitlines()]
+            events[0]["request_count"] = core.S01_MAX_REQUESTS + 1
+            rewrite_jsonl(directory / "events.jsonl", events)
+            with self.assertRaises(core.D3Error):
+                validator.validate(root, RUN, ROOT)
+
+    def test_s01_missing_request_count_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, _ = materialize(temp, RUN, ["S01"], harness=True)
+            events = [json.loads(x) for x in (directory / "events.jsonl").read_text().splitlines()]
+            del events[0]["request_count"]
+            rewrite_jsonl(directory / "events.jsonl", events)
+            with self.assertRaises(core.D3Error):
+                validator.validate(root, RUN, ROOT)
+
+    def test_extra_event_per_stage_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, _ = materialize(temp, RUN, ["S05"], harness=True)
+            events = [json.loads(x) for x in (directory / "events.jsonl").read_text().splitlines()]
+            extra = dict(events[0])
+            extra["evidence_id"] = "%s-S05-E02" % RUN
+            events.append(extra)
+            rewrite_jsonl(directory / "events.jsonl", events)
+            with self.assertRaises(core.D3Error):
+                validator.validate(root, RUN, ROOT)
+
+    def test_s02_adapter_freeze_required(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, _ = materialize(temp, RUN, ["S02"], harness=True)
+            events = [json.loads(x) for x in (directory / "events.jsonl").read_text().splitlines()]
+            for event in events:
+                if event.get("event_type") == "hybridnb_adapter":
+                    event["correlation"]["evaluation_status"] = "blocked"
+            rewrite_jsonl(directory / "events.jsonl", events)
+            with self.assertRaises(core.D3Error):
+                validator.validate(root, RUN, ROOT)
+
+    def test_model_score_in_event_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, _ = materialize(temp, RUN, ["S06"], harness=True)
+            events = [json.loads(x) for x in (directory / "events.jsonl").read_text().splitlines()]
+            events[0]["correlation"]["model_score"] = 0.99
+            rewrite_jsonl(directory / "events.jsonl", events)
+            with self.assertRaises(core.D3Error):
+                validator.validate(root, RUN, ROOT)
+
     def test_local_runner_refuses_existing_run_id(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "evidence"
@@ -305,6 +372,48 @@ class D3RuntimeTests(unittest.TestCase):
                 root, directory, bundle = self._setup(temp, [stage])
                 data = runtime_input(bundle, directory, RUN, source_override=source)
                 self.assertIn("proof=runtime", collect.assemble(data, root, ROOT))
+
+    def test_runtime_s02_carries_frozen_adapter(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, bundle = self._setup(temp, ["S02"])
+            data = runtime_input(bundle, directory, RUN)
+            self.assertIn("proof=runtime", collect.assemble(data, root, ROOT))
+            events = [json.loads(x) for x in (directory / "events.jsonl").read_text().splitlines()]
+            s02 = [e for e in events if e["stage_id"] == "S02"]
+            self.assertEqual(len(s02), 2)
+            adapters = [e for e in s02 if e.get("event_type") == "hybridnb_adapter"]
+            self.assertEqual(len(adapters), 1)
+            self.assertEqual(adapters[0]["correlation"]["evaluation_status"], "disabled_not_evaluated")
+
+    def test_runtime_s01_requires_request_count(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, bundle = self._setup(temp, ["S01"])
+            data = runtime_input(bundle, directory, RUN)
+            del data["observations"]["S01"]["request_count"]
+            with self.assertRaises(core.D3Error):
+                collect.assemble(data, root, ROOT)
+
+    def test_runtime_flow_logs_malformed_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, bundle = self._setup(temp, ["S08"])
+            data = runtime_input(bundle, directory, RUN)
+            descriptor = data["observations"]["S08"]["runtime_sources"][0]
+            raw_path = directory / descriptor["evidence_path"]
+            raw_path.write_text(descriptor["native_record_id"] + " not-a-flow-row", encoding="utf-8")
+            descriptor["content_sha256"] = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+            with self.assertRaises(core.D3Error):
+                collect.assemble(data, root, ROOT)
+
+    def test_runtime_rds_missing_timestamp_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, bundle = self._setup(temp, ["S09"])
+            data = runtime_input(bundle, directory, RUN, source_override="rds_audit")
+            descriptor = data["observations"]["S09"]["runtime_sources"][0]
+            raw_path = directory / descriptor["evidence_path"]
+            raw_path.write_text("%s,QUERY,ARGUS-Q01,SELECT synthetic_value" % descriptor["native_record_id"], encoding="utf-8")
+            descriptor["content_sha256"] = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+            with self.assertRaises(core.D3Error):
+                collect.assemble(data, root, ROOT)
 
     def test_runtime_rejects_app_source(self):
         with tempfile.TemporaryDirectory() as temp:

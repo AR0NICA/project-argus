@@ -91,6 +91,14 @@ control request; <= 1 rps, concurrency 1; synthetic only; <= 10 rows / 32 KiB;
 only `MARKER`/`IMDS_IDENTITY`/`WAS_AUTH`; S07 exact key+version GetObject only;
 HybridNB stays `disabled_not_evaluated`.
 
+Most of this boundary is now enforced by the collector/validator, not left to
+operator discipline: the S01 `request_count` (≤12) is checked from the evidence,
+the per-stage event count is fixed (S02 carries the frozen HybridNB adapter, all
+others one event), and any model score/label/threshold or non-frozen
+`evaluation_status` on any event is rejected. The S01 observation must therefore
+include a `request_count`. The reviewer still confirms the values are truthful to
+the live run, but the tooling will now reject a malformed or over-budget bundle.
+
 For each unit stage the approval harness injects the missing predecessor handoff
 (recorded, so the run is never a golden chain). For every stage, export at least
 one **independent** source raw evidence (CloudTrail, VPC Flow Logs, RDS

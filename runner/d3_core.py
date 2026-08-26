@@ -31,8 +31,17 @@ MAX_ROWS = 10
 MIN_INTERVAL_SECONDS = 1
 HANDOFF_TTL_SECONDS = 120
 S01_MAX_REQUESTS = 12
+# The local synthetic S01 models a small bounded recon well inside the 12-request
+# budget; the live runtime path carries the operator's observed request_count.
+S01_SYNTHETIC_REQUESTS = 3
 
 ALLOWED_ACTIONS = ("MARKER", "IMDS_IDENTITY", "WAS_AUTH")
+
+# D0 freeze: before D5-DUAL-DETECTION no event may carry a model score, label, or
+# threshold, and any evaluation_status must be disabled_not_evaluated. HybridNB
+# never changes an allow/block decision pre-D5.
+FORBIDDEN_EVAL_KEYS = ("model_score", "ml_score", "hybridnb_score", "crs_score", "model_label", "predicted_label", "threshold", "probability")
+HYBRIDNB_ADAPTER = {"adapter": "disabled_not_evaluated", "crs_fields_consumed": False, "evaluation_status": "disabled_not_evaluated"}
 
 # Frozen fixed synthetic result for the S09 ARGUS-Q01 query (three benign rows).
 ARGUS_Q01_ROWS = [
@@ -130,6 +139,30 @@ def guard_counts(row_count, byte_count):
         raise GuardError("result row count exceeds the 10-row guard")
     if not isinstance(byte_count, int) or byte_count < 0 or byte_count > MAX_BYTES:
         raise GuardError("result byte count exceeds the 32 KiB guard")
+
+
+def guard_s01_requests(count):
+    """Enforce the frozen S01 recon budget of at most 12 requests."""
+    if not isinstance(count, int) or isinstance(count, bool) or count < 1 or count > S01_MAX_REQUESTS:
+        raise GuardError("S01 recon exceeds the 12-request budget")
+
+
+def assert_hybridnb_frozen(record):
+    """Enforce the D0 freeze on any evidence record: no model score/label/
+    threshold, and any evaluation_status pinned to disabled_not_evaluated."""
+    def scan(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                lowered = key.lower()
+                if lowered in FORBIDDEN_EVAL_KEYS:
+                    raise D3Error("pre-D5 event carries a forbidden model field: " + key)
+                if lowered == "evaluation_status" and item != "disabled_not_evaluated":
+                    raise D3Error("pre-D5 evaluation_status must be disabled_not_evaluated")
+                scan(item)
+        elif isinstance(value, list):
+            for item in value:
+                scan(item)
+    scan(record)
 
 
 def assert_no_secret(record):
@@ -317,14 +350,14 @@ def run_unit(run_id, stages, harness_allowed, start_utc):
             record = ledger.consume(handoff_in_id, run_id, kind, stage, now)
             predecessor_token = record["predecessor_success_token"]
 
-        if stage == "S01" and S01_MAX_REQUESTS > 12:  # frozen recon budget guard
-            raise GuardError("S01 recon budget exceeds 12 requests")
-
         content_sha = sha(canonical_bytes({"run_id": run_id, "stage": stage, "fixture": spec["fixture"], "predecessor": predecessor_token}))
         success_value = success_token(run_id, stage, spec["success_field"], spec["fixture"], predecessor_token, spec["success_type"])
 
         result_handle = None
         extra = {"correlation": {"success_field": spec["success_field"]}}
+        if stage == "S01":
+            guard_s01_requests(S01_SYNTHETIC_REQUESTS)  # frozen recon budget guard
+            extra["request_count"] = S01_SYNTHETIC_REQUESTS
         if stage == "S09":
             payload = canonical_bytes(ARGUS_Q01_ROWS)
             guard_result(ARGUS_Q01_ROWS, payload)
@@ -346,7 +379,7 @@ def run_unit(run_id, stages, harness_allowed, start_utc):
         events.append(_build_event(run_id, stage, 1, spec["event_type"], spec["result"], request_id, spec["fixture"], "test_terminal" if stage == "S01" else "argus_web", spec.get("target", "argus_was"), spec["action"] or "none", content_sha, spec["success_type"], success_value, handoff_in_id, handoff_out_id, harness_injected, now, extra))
 
         if stage == "S02":
-            adapter = {"correlation": {"adapter": "disabled_not_evaluated", "crs_fields_consumed": False, "evaluation_status": "disabled_not_evaluated"}}
+            adapter = {"correlation": dict(HYBRIDNB_ADAPTER)}
             events.append(_build_event(run_id, stage, 2, "hybridnb_adapter", "not_evaluated", request_id, spec["fixture"], "argus_web", "hybridnb_interface", "none", content_sha, spec["success_type"], success_value, handoff_in_id, None, harness_injected, now, adapter))
 
     # R0-UNIT proves unit-stage contracts only. It never counts toward the D4

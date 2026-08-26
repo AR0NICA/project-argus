@@ -67,6 +67,47 @@ def build_event(run_id, stage, obs):
         if "result_guard" not in obs:
             raise core.D3Error(stage + " observation is missing result_guard")
         event["result_guard"] = obs["result_guard"]
+    if stage == "S01":
+        if "request_count" not in obs:
+            raise core.D3Error("S01 observation is missing request_count")
+        core.guard_s01_requests(obs["request_count"])
+        event["request_count"] = obs["request_count"]
+    core.assert_no_secret(event)
+    return event
+
+
+def build_hybridnb_adapter(run_id, obs):
+    """The D0-frozen HybridNB adapter event for S02, mirrored on the runtime path
+    so the disabled_not_evaluated freeze is present and checkable for both proof
+    kinds. It carries no model score/label and drives no allow/block decision."""
+    spec = core.SPEC["S02"]
+    event = {
+        "schema_version": core.SCHEMA_EVENT,
+        "evidence_id": "%s-S02-E02" % run_id,
+        "event_time_utc": obs["event_time_utc"],
+        "run_id": run_id,
+        "stage_id": "S02",
+        "event_type": "hybridnb_adapter",
+        "result": "not_evaluated",
+        "request_id": obs.get("request_id", "%s-S02-REQ" % run_id),
+        "source_ref": "argus_web",
+        "target_ref": "hybridnb_interface",
+        "action": "none",
+        "fixture_or_resource_id": spec["fixture"],
+        "content_sha256": obs["content_sha256"],
+        "collector": "d3-runtime-collector",
+        "reviewer": None,
+        "redaction_status": "runtime_independent_source",
+        "secret_material_present": False,
+        "success_token_kind": obs["success_token_kind"],
+        "success_token_value": obs["success_token_value"],
+        "handoff_in_id": obs["handoff_in_id"],
+        "handoff_out_id": None,
+        "handoff_injected": bool(obs["harness_injected"]),
+        "harness_injected": bool(obs["harness_injected"]),
+        "counts_toward_golden_chain": False,
+        "correlation": dict(core.HYBRIDNB_ADAPTER),
+    }
     core.assert_no_secret(event)
     return event
 
@@ -95,6 +136,8 @@ def assemble(data, evidence_root, checkout):
             raise core.D3Error("missing observation for " + stage)
         obs = observations[stage]
         events.append(build_event(run_id, stage, obs))
+        if stage == "S02":
+            events.append(build_hybridnb_adapter(run_id, obs))
         spec = core.SPEC[stage]
         if spec["handoff_in"] and obs.get("harness_injected"):
             injected.append(spec["handoff_in"])

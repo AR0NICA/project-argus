@@ -39,7 +39,13 @@ expiry, cross-run use, wrong-kind, and wrong-consuming-stage are all rejected.
 
 ## Safety boundary (unchanged in D3)
 
-- S01 ≤ 12 total requests; S02-S10 one contract request and one control request.
+- S01 ≤ 12 total requests. **Enforced from evidence**: the S01 primary event
+  carries a `request_count` that `guard_s01_requests` rejects above 12 (local
+  synthetic uses a fixed count of 3; runtime carries the operator's observed
+  count). Only S01 may carry `request_count`.
+- S02-S10 one contract request and one control request. **Enforced count**: the
+  validator requires the exact per-stage event count — S02 carries two events
+  (the contract event plus the frozen HybridNB adapter), every other stage one.
 - ≤ 1 rps, concurrency 1, ≥ 1 s between requests.
 - Synthetic results only, ≤ 10 rows and ≤ 32 KiB, checked before return in S09/S10.
 - Only the `MARKER`, `IMDS_IDENTITY`, `WAS_AUTH` fixed actions; no arbitrary SQL,
@@ -47,7 +53,12 @@ expiry, cross-run use, wrong-kind, and wrong-consuming-stage are all rejected.
   `ListBucket`, write, delete, or policy change.
 - No credential material captured; every evidence record is scanned for
   secret-like material and carries `secret_material_present=false`.
-- HybridNB stays `disabled_not_evaluated`; no model score/label/threshold before D5.
+- HybridNB stays `disabled_not_evaluated` (D0 freeze). **Enforced for both proof
+  kinds**: `assert_hybridnb_frozen` rejects any event carrying a model
+  score/label/threshold or an `evaluation_status` other than
+  `disabled_not_evaluated`, and S02 must carry exactly one adapter event pinned
+  to that status. The runtime collector emits this adapter too, so the freeze is
+  checkable on live evidence, not just the local path.
 
 ## Two proof kinds
 

@@ -129,7 +129,10 @@ def validate_event_common(event, run_id):
         fail("event reviewer/secret material contract violated")
     if not core.SHA_RE.fullmatch(event.get("content_sha256", "")):
         fail("event content hash is not a sha256")
+    if event["stage_id"] != "S01" and "request_count" in event:
+        fail("only S01 may carry a request_count")
     core.assert_no_secret(event)
+    core.assert_hybridnb_frozen(event)
     core.assert_action_allowed(event["action"] if event["action"] != "none" else None)
 
 
@@ -389,6 +392,28 @@ def validate(evidence_root, run_id, checkout):
             primary[stage] = event
     if ordered_stages != stages:
         fail("event stage order does not match the manifest")
+
+    # Per-stage event count is fixed by the contract: S02 carries the extra
+    # HybridNB adapter event, every other stage exactly one primary event.
+    for stage in stages:
+        expected = 2 if stage == "S02" else 1
+        if seen_seq.get(stage, 0) != expected:
+            fail("stage " + stage + " does not carry the exact contract event count")
+
+    # S01 recon request budget (frozen at <=12 requests), enforced from evidence
+    # rather than trusted operator discipline.
+    if "S01" in primary:
+        core.guard_s01_requests(primary["S01"].get("request_count"))
+
+    # D0 freeze: S02 must carry exactly one HybridNB adapter event pinned to
+    # disabled_not_evaluated. It never drives an allow/block decision pre-D5.
+    if "S02" in stages:
+        adapters = [event for event in events if event["stage_id"] == "S02" and event.get("event_type") == "hybridnb_adapter"]
+        if len(adapters) != 1:
+            fail("S02 must carry exactly one HybridNB adapter event")
+        correlation = adapters[0].get("correlation")
+        if not isinstance(correlation, dict) or correlation.get("evaluation_status") != "disabled_not_evaluated" or correlation.get("crs_fields_consumed") is not False:
+            fail("S02 HybridNB adapter is not pinned to the disabled_not_evaluated freeze")
 
     index = {}
     for record in handoffs:
