@@ -33,15 +33,15 @@ if (-not (Test-Path (Join-Path $baseDir $VarFile))) {
     throw "Missing ignored local variable file: $VarFile. Copy terraform.tfvars.example first."
 }
 
-terraform -chdir=$baseDir init -input=false -backend-config=backend.hcl
+terraform "-chdir=$baseDir" init "-input=false" "-backend-config=backend.hcl"
 Assert-NativeSuccess "BASE Terraform init"
-terraform -chdir=$baseDir plan -input=false -var-file=$VarFile -var="deployment_phase=$Phase" -var="allowed_test_cidrs=[`"$clientCidr`"]" -var="budget_alert_email=$BudgetAlertEmail" -out=base.tfplan
+terraform "-chdir=$baseDir" plan "-input=false" "-var-file=$VarFile" "-var=deployment_phase=$Phase" "-var=allowed_test_cidrs=[`"$clientCidr`"]" "-var=budget_alert_email=$BudgetAlertEmail" "-out=base.tfplan"
 Assert-NativeSuccess "BASE Terraform plan"
-terraform -chdir=$baseDir show -no-color base.tfplan
+terraform "-chdir=$baseDir" show "-no-color" base.tfplan
 Assert-NativeSuccess "BASE Terraform saved plan review"
 $confirmation = Read-Host "Type APPLY-BASE-$Phase to apply the reviewed plan"
 if ($confirmation -ne "APPLY-BASE-$Phase") {
     throw "Apply confirmation did not match. No resources were changed."
 }
-terraform -chdir=$baseDir apply -input=false base.tfplan
+terraform "-chdir=$baseDir" apply "-input=false" base.tfplan
 Assert-NativeSuccess "BASE Terraform apply"
