@@ -77,4 +77,22 @@ for fixture_stage, core_stage in zip(d3["stages"], d3_core.STAGES):
     if (fixture_stage["stage"], fixture_stage["fixture_or_resource_id"], fixture_stage["action"], fixture_stage["success_token"], fixture_stage["handoff_in"], fixture_stage["handoff_out"]) != (core_stage["stage"], core_stage["fixture"], core_stage["action"], core_stage["success_field"], core_stage["handoff_in"], core_stage["handoff_out"]):
         raise SystemExit("D3 fixture stage contract drifted from the core authority: " + fixture_stage["stage"])
 
-print("static validation passed: JSON, Python syntax, topology, limits, DB boundary, and D3 unit contract")
+# D4-FULL-CHAIN contract: the chain fixture must mirror the frozen core authority
+# and D4 must reuse the D3 stage table unchanged (single source of truth).
+for file in [ROOT / "runner/d4_core.py", ROOT / "runner/run_d4_chain.py", ROOT / "runner/collect_d4_runtime.py", ROOT / "runner/run_d4_gate.py", ROOT / "runner/run_d4_baseline_gate.py", ROOT / "scripts/validate_d4_evidence.py", ROOT / "scripts/validate_d4_baseline.py", ROOT / "tests/test_d4_contract.py"]:
+    ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
+import d4_core  # noqa: E402
+if tuple(d4_core.FULL_CHAIN) != tuple(item["stage"] for item in d3_core.STAGES):
+    raise SystemExit("D4 full chain drifted from the S01-S10 core authority")
+if d4_core.MIN_GOLDEN_RUNS < 3:
+    raise SystemExit("D4 R1-BASELINE minimum golden-run count must be at least 3")
+d4 = json.loads((ROOT / "fixtures/d4-chain-fixtures.json").read_text(encoding="utf-8"))
+if [s["stage"] for s in d4["chain"]] != list(d4_core.FULL_CHAIN):
+    raise SystemExit("D4 chain fixture stage order does not match the core authority")
+if d4["minimum_golden_runs_for_baseline"] != d4_core.MIN_GOLDEN_RUNS:
+    raise SystemExit("D4 chain fixture baseline minimum drifted from the core authority")
+for fixture_stage, core_stage in zip(d4["chain"], d3_core.STAGES):
+    if (fixture_stage["stage"], fixture_stage["fixture_or_resource_id"], fixture_stage["handoff_in"], fixture_stage["handoff_out"]) != (core_stage["stage"], core_stage["fixture"], core_stage["handoff_in"], core_stage["handoff_out"]):
+        raise SystemExit("D4 chain fixture drifted from the core authority: " + fixture_stage["stage"])
+
+print("static validation passed: JSON, Python syntax, topology, limits, DB boundary, and D3/D4 stage contracts")

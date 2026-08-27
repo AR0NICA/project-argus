@@ -1,0 +1,33 @@
+{
+  "manifest_version": "argus.d4-chain.fixture/v1",
+  "scenario": "D4-FULL-CHAIN",
+  "experiment_group": "R1-BASELINE",
+  "lab_boundary": "authorized isolated account, approved CIDR, synthetic data only, non-destructive, 1 rps, concurrency 1, <=10 rows, <=32 KiB",
+  "golden_chain_rule": "counts_toward_golden_chain=true only when proof_kind=runtime AND every S01..S10 stage ran and succeeded in order AND zero approval-harness injections AND zero handoff reuse/expiry/cross-run/wrong-stage errors",
+  "minimum_golden_runs_for_baseline": 3,
+  "injection_policy": "the D4 chain forbids approval-harness injection; every predecessor handoff must be the real prior stage success token",
+  "safety_bounds": {
+    "s01_max_total_requests": 12,
+    "per_stage_contract_requests": 1,
+    "max_rps": 1,
+    "concurrency": 1,
+    "max_result_rows": 10,
+    "max_result_bytes": 32768,
+    "handoff_ttl_seconds": 120,
+    "min_interval_seconds": 1
+  },
+  "allow_list_actions": ["MARKER", "IMDS_IDENTITY", "WAS_AUTH"],
+  "hybridnb_boundary": "disabled_not_evaluated before D5; no model score/label/threshold produced; WAF-vs-HybridNB four-quadrant is D5 only",
+  "chain": [
+    {"stage": "S01", "fixture_or_resource_id": "ATK-S01-RECON-01", "handoff_in": null, "handoff_out": "endpoint_contract_id"},
+    {"stage": "S02", "fixture_or_resource_id": "ATK-S02-SYNTH-AUTH-01", "handoff_in": "endpoint_contract_id", "handoff_out": "auth_decision_id"},
+    {"stage": "S03", "fixture_or_resource_id": "ATK-S03-ADMIN-01", "handoff_in": "auth_decision_id", "handoff_out": "upload_ticket_id"},
+    {"stage": "S04", "fixture_or_resource_id": "ATK-S04-MARKER-01", "handoff_in": "upload_ticket_id", "handoff_out": "web_action_context_id"},
+    {"stage": "S05", "fixture_or_resource_id": "ATK-S05-IMDS-01", "handoff_in": "web_action_context_id", "handoff_out": "credential_handoff_id"},
+    {"stage": "S06", "fixture_or_resource_id": "ATK-S06-STS-01", "handoff_in": "credential_handoff_id", "handoff_out": "same_role_session_id"},
+    {"stage": "S07", "fixture_or_resource_id": "ATK-S07-CANARY-01", "handoff_in": "same_role_session_id", "handoff_out": "was_bundle_handoff_id"},
+    {"stage": "S08", "fixture_or_resource_id": "ATK-S08-WASAUTH-01", "handoff_in": "was_bundle_handoff_id", "handoff_out": "db_read_ticket_id"},
+    {"stage": "S09", "fixture_or_resource_id": "ATK-S09-ARGUS-Q01", "handoff_in": "db_read_ticket_id", "handoff_out": "result_handle_id"},
+    {"stage": "S10", "fixture_or_resource_id": "BEN-S10-DELIVERY-01", "handoff_in": "result_handle_id", "handoff_out": null}
+  ]
+}

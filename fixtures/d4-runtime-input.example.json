@@ -1,0 +1,429 @@
+{
+  "_note": "TEMPLATE ONLY. Shows the shape of the operator-exported runtime input for collect_d4_runtime.py. D4 is the complete uninjected S01..S10 golden chain: every stage must be present and in order, every predecessor handoff must be the REAL prior stage success token (harness_injected is always false), and every stage needs at least one independent-source raw record already sitting under <evidence-root>/<run_id>/raw/ at the relative evidence_path shown. Replace every <...> placeholder and every YYYY-MM-DD time with values observed from ONE live BASE full-chain run. A run id is immutable after any derived artifact is written; use a new run id for retries. This template is not a validation fixture and will not pass the validator as written. The collector emits the frozen S02 HybridNB adapter event automatically. Three golden chains over three distinct run ids establish R1-BASELINE.",
+  "input_version": "argus.d4-runtime-input/v1",
+  "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+  "run_window": {
+    "start_utc": "YYYY-MM-DDTHH:MM:SSZ",
+    "end_utc": "YYYY-MM-DDTHH:MM:SSZ"
+  },
+  "stages": [
+    "S01",
+    "S02",
+    "S03",
+    "S04",
+    "S05",
+    "S06",
+    "S07",
+    "S08",
+    "S09",
+    "S10"
+  ],
+  "observations": {
+    "S01": {
+      "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "success_token_kind": "hash",
+      "success_token_value": "<64-hex hash from the live handoff engine>",
+      "content_sha256": "<64-hex content hash from the live stage event>",
+      "handoff_in_id": null,
+      "handoff_out_id": "<uuid4 of the issued handoff>",
+      "harness_injected": false,
+      "runtime_sources": [
+        {
+          "source": "alb_access",
+          "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+          "evidence_path": "raw/S01-alb_access.log",
+          "content_sha256": "<64-hex sha256 of the exported raw file>",
+          "collector": "operator-export",
+          "redaction_status": "independent_source_no_app_dependency",
+          "native_record_id": "<native record id, e.g. CloudTrail eventID / ENI id / audit(epoch:serial)>",
+          "anchors": [
+            "<native record id>",
+            "ARGUS-YYYYMMDD-BASE-RNN"
+          ]
+        }
+      ],
+      "request_count": 3
+    },
+    "S02": {
+      "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "success_token_kind": "hash",
+      "success_token_value": "<64-hex hash from the live handoff engine>",
+      "content_sha256": "<64-hex content hash from the live stage event>",
+      "handoff_in_id": "<uuid4 of the consumed predecessor handoff>",
+      "handoff_out_id": "<uuid4 of the issued handoff>",
+      "harness_injected": false,
+      "runtime_sources": [
+        {
+          "source": "nginx_modsecurity",
+          "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+          "evidence_path": "raw/S02-nginx_modsecurity.log",
+          "content_sha256": "<64-hex sha256 of the exported raw file>",
+          "collector": "operator-export",
+          "redaction_status": "independent_source_no_app_dependency",
+          "native_record_id": "<native record id, e.g. CloudTrail eventID / ENI id / audit(epoch:serial)>",
+          "anchors": [
+            "<native record id>",
+            "ARGUS-YYYYMMDD-BASE-RNN"
+          ]
+        }
+      ]
+    },
+    "S03": {
+      "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "success_token_kind": "hash",
+      "success_token_value": "<64-hex hash from the live handoff engine>",
+      "content_sha256": "<64-hex content hash from the live stage event>",
+      "handoff_in_id": "<uuid4 of the consumed predecessor handoff>",
+      "handoff_out_id": "<uuid4 of the issued handoff>",
+      "harness_injected": false,
+      "runtime_sources": [
+        {
+          "source": "alb_access",
+          "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+          "evidence_path": "raw/S03-alb_access.log",
+          "content_sha256": "<64-hex sha256 of the exported raw file>",
+          "collector": "operator-export",
+          "redaction_status": "independent_source_no_app_dependency",
+          "native_record_id": "<native record id, e.g. CloudTrail eventID / ENI id / audit(epoch:serial)>",
+          "anchors": [
+            "<native record id>",
+            "ARGUS-YYYYMMDD-BASE-RNN"
+          ]
+        }
+      ]
+    },
+    "S04": {
+      "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "success_token_kind": "hash",
+      "success_token_value": "<64-hex hash from the live handoff engine>",
+      "content_sha256": "<64-hex content hash from the live stage event>",
+      "handoff_in_id": "<uuid4 of the consumed predecessor handoff>",
+      "handoff_out_id": "<uuid4 of the issued handoff>",
+      "harness_injected": false,
+      "runtime_sources": [
+        {
+          "source": "alb_access",
+          "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+          "evidence_path": "raw/S04-alb_access.log",
+          "content_sha256": "<64-hex sha256 of the exported raw file>",
+          "collector": "operator-export",
+          "redaction_status": "independent_source_no_app_dependency",
+          "native_record_id": "<native record id, e.g. CloudTrail eventID / ENI id / audit(epoch:serial)>",
+          "anchors": [
+            "<native record id>",
+            "ARGUS-YYYYMMDD-BASE-RNN"
+          ]
+        }
+      ]
+    },
+    "S05": {
+      "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "success_token_kind": "hash",
+      "success_token_value": "<64-hex hash from the live handoff engine>",
+      "content_sha256": "<64-hex content hash from the live stage event>",
+      "handoff_in_id": "<uuid4 of the consumed predecessor handoff>",
+      "handoff_out_id": "<uuid4 of the issued handoff>",
+      "harness_injected": false,
+      "runtime_sources": [
+        {
+          "source": "auditd",
+          "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+          "evidence_path": "raw/S05-auditd.log",
+          "content_sha256": "<64-hex sha256 of the exported raw file>",
+          "collector": "operator-export",
+          "redaction_status": "independent_source_no_app_dependency",
+          "native_record_id": "<native record id, e.g. CloudTrail eventID / ENI id / audit(epoch:serial)>",
+          "anchors": [
+            "<native record id>",
+            "ARGUS-YYYYMMDD-BASE-RNN"
+          ]
+        }
+      ]
+    },
+    "S06": {
+      "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "success_token_kind": "event_id",
+      "success_token_value": "EVT-<32-hex from the live handoff engine>",
+      "content_sha256": "<64-hex content hash from the live stage event>",
+      "handoff_in_id": "<uuid4 of the consumed predecessor handoff>",
+      "handoff_out_id": "<uuid4 of the issued handoff>",
+      "harness_injected": false,
+      "runtime_sources": [
+        {
+          "source": "cloudtrail",
+          "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+          "evidence_path": "raw/S06-cloudtrail.log",
+          "content_sha256": "<64-hex sha256 of the exported raw file>",
+          "collector": "operator-export",
+          "redaction_status": "independent_source_no_app_dependency",
+          "native_record_id": "<native record id, e.g. CloudTrail eventID / ENI id / audit(epoch:serial)>",
+          "anchors": [
+            "<native record id>",
+            "ARGUS-YYYYMMDD-BASE-RNN"
+          ]
+        }
+      ]
+    },
+    "S07": {
+      "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "success_token_kind": "hash",
+      "success_token_value": "<64-hex hash from the live handoff engine>",
+      "content_sha256": "<64-hex content hash from the live stage event>",
+      "handoff_in_id": "<uuid4 of the consumed predecessor handoff>",
+      "handoff_out_id": "<uuid4 of the issued handoff>",
+      "harness_injected": false,
+      "runtime_sources": [
+        {
+          "source": "cloudtrail",
+          "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+          "evidence_path": "raw/S07-cloudtrail.log",
+          "content_sha256": "<64-hex sha256 of the exported raw file>",
+          "collector": "operator-export",
+          "redaction_status": "independent_source_no_app_dependency",
+          "native_record_id": "<native record id, e.g. CloudTrail eventID / ENI id / audit(epoch:serial)>",
+          "anchors": [
+            "<native record id>",
+            "ARGUS-YYYYMMDD-BASE-RNN"
+          ]
+        }
+      ]
+    },
+    "S08": {
+      "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "success_token_kind": "hash",
+      "success_token_value": "<64-hex hash from the live handoff engine>",
+      "content_sha256": "<64-hex content hash from the live stage event>",
+      "handoff_in_id": "<uuid4 of the consumed predecessor handoff>",
+      "handoff_out_id": "<uuid4 of the issued handoff>",
+      "harness_injected": false,
+      "runtime_sources": [
+        {
+          "source": "flow_logs",
+          "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+          "evidence_path": "raw/S08-flow_logs.log",
+          "content_sha256": "<64-hex sha256 of the exported raw file>",
+          "collector": "operator-export",
+          "redaction_status": "independent_source_no_app_dependency",
+          "native_record_id": "<native record id, e.g. CloudTrail eventID / ENI id / audit(epoch:serial)>",
+          "anchors": [
+            "<native record id>",
+            "ARGUS-YYYYMMDD-BASE-RNN"
+          ]
+        }
+      ]
+    },
+    "S09": {
+      "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "success_token_kind": "manifest_id",
+      "success_token_value": "DBM-<32-hex from the live handoff engine>",
+      "content_sha256": "<64-hex content hash from the live stage event>",
+      "handoff_in_id": "<uuid4 of the consumed predecessor handoff>",
+      "handoff_out_id": "<uuid4 of the issued handoff>",
+      "harness_injected": false,
+      "runtime_sources": [
+        {
+          "source": "flow_logs",
+          "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+          "evidence_path": "raw/S09-flow_logs.log",
+          "content_sha256": "<64-hex sha256 of the exported raw file>",
+          "collector": "operator-export",
+          "redaction_status": "independent_source_no_app_dependency",
+          "native_record_id": "<native record id, e.g. CloudTrail eventID / ENI id / audit(epoch:serial)>",
+          "anchors": [
+            "<native record id>",
+            "ARGUS-YYYYMMDD-BASE-RNN"
+          ]
+        }
+      ],
+      "result_guard": {
+        "row_count": 3,
+        "byte_count": 0,
+        "result_sha256": "<64-hex sha256 of the <=10-row synthetic result>"
+      }
+    },
+    "S10": {
+      "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "success_token_kind": "hash",
+      "success_token_value": "<64-hex hash from the live handoff engine>",
+      "content_sha256": "<64-hex content hash from the live stage event>",
+      "handoff_in_id": "<uuid4 of the consumed predecessor handoff>",
+      "handoff_out_id": null,
+      "harness_injected": false,
+      "runtime_sources": [
+        {
+          "source": "alb_access",
+          "event_time_utc": "YYYY-MM-DDTHH:MM:SSZ",
+          "evidence_path": "raw/S10-alb_access.log",
+          "content_sha256": "<64-hex sha256 of the exported raw file>",
+          "collector": "operator-export",
+          "redaction_status": "independent_source_no_app_dependency",
+          "native_record_id": "<native record id, e.g. CloudTrail eventID / ENI id / audit(epoch:serial)>",
+          "anchors": [
+            "<native record id>",
+            "ARGUS-YYYYMMDD-BASE-RNN"
+          ]
+        }
+      ],
+      "result_guard": {
+        "row_count": 3,
+        "byte_count": 0,
+        "result_sha256": "<64-hex sha256 of the <=10-row synthetic result>"
+      }
+    }
+  },
+  "handoffs": [
+    {
+      "handoff_schema_version": "argus.d3-handoff/v1",
+      "handoff_id": "<uuid4>",
+      "handoff_kind": "endpoint_contract_id",
+      "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+      "issued_by_stage": "S01",
+      "consumed_by_stage": "S02",
+      "predecessor_success_token": "<this stage's success token>",
+      "predecessor_success_kind": "hash",
+      "issued_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "ttl_seconds": 120,
+      "not_after_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "one_time": true,
+      "consumed": true,
+      "consumed_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "harness_injected": false
+    },
+    {
+      "handoff_schema_version": "argus.d3-handoff/v1",
+      "handoff_id": "<uuid4>",
+      "handoff_kind": "auth_decision_id",
+      "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+      "issued_by_stage": "S02",
+      "consumed_by_stage": "S03",
+      "predecessor_success_token": "<this stage's success token>",
+      "predecessor_success_kind": "hash",
+      "issued_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "ttl_seconds": 120,
+      "not_after_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "one_time": true,
+      "consumed": true,
+      "consumed_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "harness_injected": false
+    },
+    {
+      "handoff_schema_version": "argus.d3-handoff/v1",
+      "handoff_id": "<uuid4>",
+      "handoff_kind": "upload_ticket_id",
+      "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+      "issued_by_stage": "S03",
+      "consumed_by_stage": "S04",
+      "predecessor_success_token": "<this stage's success token>",
+      "predecessor_success_kind": "hash",
+      "issued_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "ttl_seconds": 120,
+      "not_after_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "one_time": true,
+      "consumed": true,
+      "consumed_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "harness_injected": false
+    },
+    {
+      "handoff_schema_version": "argus.d3-handoff/v1",
+      "handoff_id": "<uuid4>",
+      "handoff_kind": "web_action_context_id",
+      "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+      "issued_by_stage": "S04",
+      "consumed_by_stage": "S05",
+      "predecessor_success_token": "<this stage's success token>",
+      "predecessor_success_kind": "hash",
+      "issued_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "ttl_seconds": 120,
+      "not_after_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "one_time": true,
+      "consumed": true,
+      "consumed_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "harness_injected": false
+    },
+    {
+      "handoff_schema_version": "argus.d3-handoff/v1",
+      "handoff_id": "<uuid4>",
+      "handoff_kind": "credential_handoff_id",
+      "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+      "issued_by_stage": "S05",
+      "consumed_by_stage": "S06",
+      "predecessor_success_token": "<this stage's success token>",
+      "predecessor_success_kind": "hash",
+      "issued_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "ttl_seconds": 120,
+      "not_after_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "one_time": true,
+      "consumed": true,
+      "consumed_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "harness_injected": false
+    },
+    {
+      "handoff_schema_version": "argus.d3-handoff/v1",
+      "handoff_id": "<uuid4>",
+      "handoff_kind": "same_role_session_id",
+      "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+      "issued_by_stage": "S06",
+      "consumed_by_stage": "S07",
+      "predecessor_success_token": "<this stage's success token>",
+      "predecessor_success_kind": "event_id",
+      "issued_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "ttl_seconds": 120,
+      "not_after_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "one_time": true,
+      "consumed": true,
+      "consumed_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "harness_injected": false
+    },
+    {
+      "handoff_schema_version": "argus.d3-handoff/v1",
+      "handoff_id": "<uuid4>",
+      "handoff_kind": "was_bundle_handoff_id",
+      "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+      "issued_by_stage": "S07",
+      "consumed_by_stage": "S08",
+      "predecessor_success_token": "<this stage's success token>",
+      "predecessor_success_kind": "hash",
+      "issued_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "ttl_seconds": 120,
+      "not_after_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "one_time": true,
+      "consumed": true,
+      "consumed_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "harness_injected": false
+    },
+    {
+      "handoff_schema_version": "argus.d3-handoff/v1",
+      "handoff_id": "<uuid4>",
+      "handoff_kind": "db_read_ticket_id",
+      "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+      "issued_by_stage": "S08",
+      "consumed_by_stage": "S09",
+      "predecessor_success_token": "<this stage's success token>",
+      "predecessor_success_kind": "hash",
+      "issued_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "ttl_seconds": 120,
+      "not_after_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "one_time": true,
+      "consumed": true,
+      "consumed_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "harness_injected": false
+    },
+    {
+      "handoff_schema_version": "argus.d3-handoff/v1",
+      "handoff_id": "<uuid4>",
+      "handoff_kind": "result_handle_id",
+      "run_id": "ARGUS-YYYYMMDD-BASE-RNN",
+      "issued_by_stage": "S09",
+      "consumed_by_stage": "S10",
+      "predecessor_success_token": "<this stage's success token>",
+      "predecessor_success_kind": "manifest_id",
+      "issued_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "ttl_seconds": 120,
+      "not_after_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "one_time": true,
+      "consumed": true,
+      "consumed_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+      "harness_injected": false
+    }
+  ]
+}

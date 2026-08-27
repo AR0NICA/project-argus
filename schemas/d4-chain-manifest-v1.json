@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://argus.local/schema/d4-chain-manifest-v1.json",
+  "title": "ARGUS D4 full-chain run manifest",
+  "type": "object",
+  "required": ["manifest_version", "run_id", "scenario", "experiment_group", "approval_state", "proof_kind", "concurrency", "minimum_interval_seconds", "max_result_rows", "max_result_bytes", "stages_executed", "harness_injected_handoffs", "counts_toward_golden_chain"],
+  "properties": {
+    "manifest_version": {"const": "argus.d4-full-chain-run/v1"},
+    "run_id": {"type": "string", "pattern": "^ARGUS-[0-9]{8}-BASE-R[0-9]{2}$"},
+    "scenario": {"const": "D4-FULL-CHAIN"},
+    "experiment_group": {"const": "R1-BASELINE"},
+    "approval_state": {"const": "approved"},
+    "proof_kind": {"enum": ["local_synthetic", "runtime"]},
+    "concurrency": {"const": 1},
+    "minimum_interval_seconds": {"const": 1},
+    "max_result_rows": {"const": 10},
+    "max_result_bytes": {"const": 32768},
+    "stages_executed": {
+      "type": "array",
+      "items": {"enum": ["S01", "S02", "S03", "S04", "S05", "S06", "S07", "S08", "S09", "S10"]},
+      "minItems": 10,
+      "maxItems": 10
+    },
+    "harness_injected_handoffs": {
+      "type": "array",
+      "maxItems": 0,
+      "description": "The D4 chain forbids approval-harness injection; this set is always empty."
+    },
+    "counts_toward_golden_chain": {"type": "boolean"},
+    "run_window": {
+      "type": "object",
+      "required": ["start_utc", "end_utc"],
+      "properties": {"start_utc": {"type": "string", "format": "date-time"}, "end_utc": {"type": "string", "format": "date-time"}},
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
