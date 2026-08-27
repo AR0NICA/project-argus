@@ -3,7 +3,7 @@
   "$id": "https://argus.local/schema/d4-baseline-manifest-v1.json",
   "title": "ARGUS D4 R1-BASELINE aggregate manifest",
   "type": "object",
-  "required": ["manifest_version", "scenario", "experiment_group", "golden_chain_runs", "golden_chain_count", "minimum_required", "baseline_established"],
+  "required": ["manifest_version", "scenario", "experiment_group", "golden_chain_runs", "golden_chain_members", "golden_chain_count", "minimum_required", "baseline_established"],
   "properties": {
     "manifest_version": {"const": "argus.d4-r1-baseline/v1"},
     "scenario": {"const": "D4-FULL-CHAIN"},
@@ -13,6 +13,22 @@
       "items": {"type": "string", "pattern": "^ARGUS-[0-9]{8}-BASE-R[0-9]{2}$"},
       "minItems": 3,
       "uniqueItems": true
+    },
+    "golden_chain_members": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["run_id", "run_manifest_sha256", "provenance_sha256", "events_sha256", "handoffs_sha256"],
+        "properties": {
+          "run_id": {"type": "string", "pattern": "^ARGUS-[0-9]{8}-BASE-R[0-9]{2}$"},
+          "run_manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "provenance_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "events_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "handoffs_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        },
+        "additionalProperties": false
+      }
     },
     "golden_chain_count": {"type": "integer", "minimum": 3},
     "minimum_required": {"const": 3},

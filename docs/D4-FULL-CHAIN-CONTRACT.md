@@ -21,6 +21,11 @@ trusted**, and holds only when **all** of these are true:
    prior stage's success token;
 4. **zero** handoff reuse / expiry / cross-run / wrong-stage errors.
 
+The validator also re-derives every deterministic success token from the run id,
+stage contract, fixture, and real predecessor token. The handoff ledger must be
+exactly nine records with no orphan records, and issue/consume timestamps must
+match the corresponding stage events.
+
 The D4 chain **forbids injection outright**: any harness-injected event or handoff
 is rejected, so a valid D4 run always carries an empty injected set. Partial runs,
 injected runs, and single-stage proofs belong to **D3-UNIT-STAGES**, not here.
@@ -48,7 +53,10 @@ four-quadrant evaluation is **D5-DUAL-DETECTION only**.
 Three or more **distinct** run ids, each an independently re-validated runtime
 golden chain, establish the baseline (`scripts/validate_d4_baseline.py`,
 `runner/run_d4_baseline_gate.py`). The aggregate never re-labels a per-run result:
-every member must already stand on its own as a golden chain.
+every member must already stand on its own as a golden chain. The same
+source-native record identity (source, id, event time, and content hash) may not
+be reused across member runs, and the aggregate manifest binds each member's
+manifest, provenance, events, and handoffs by SHA-256.
 
 ## Commands (local contract, no AWS, no cost)
 

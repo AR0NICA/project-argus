@@ -27,8 +27,9 @@ WINDOW = {"start_utc": "2026-08-27T00:00:00Z", "end_utc": "2026-08-27T01:00:00Z"
 
 def make_source(directory, stage, run_id, event_time_utc, source=None, corrupt=False):
     src = source if source is not None else sorted(d3v.RUNTIME_SOURCES[stage])[0]
+    run_digest = hashlib.sha256((run_id + ":" + stage).encode("utf-8")).hexdigest()
     if src in {"cloudtrail", "s3_data_event"}:
-        native = "11111111-1111-4111-8111-" + ("0" * 11) + stage[-1]
+        native = "%s-%s-4%s-8%s-%s" % (run_digest[:8], run_digest[8:12], run_digest[13:16], run_digest[17:20], run_digest[20:32])
         event_name = "GetCallerIdentity" if stage == "S06" else "GetObject"
         event_source = "sts.amazonaws.com" if stage == "S06" else "s3.amazonaws.com"
         item = {"eventID": native, "eventTime": event_time_utc, "eventSource": event_source, "eventName": event_name}
@@ -36,21 +37,21 @@ def make_source(directory, stage, run_id, event_time_utc, source=None, corrupt=F
             item["requestParameters"] = {"key": "canary.txt", "versionId": "version-01"}
         text = json.dumps({"Records": [item]}, separators=(",", ":"))
     elif src == "flow_logs":
-        native = "eni-0abc" + stage.lower()
+        native = "eni-" + run_digest[:12]
         epoch = int(core.parse_utc(event_time_utc).timestamp())
         text = "2 123456789012 %s 10.0.1.10 10.0.2.20 51000 443 6 1 128 %d %d ACCEPT OK" % (native, epoch - 1, epoch + 1)
     elif src == "alb_access":
-        native = "Root=1-abcdef01-" + ("0" * 23) + stage[-1]
+        native = "Root=1-%s-%s" % (run_digest[:8], run_digest[8:32])
         text = 'https %s app/argus/123 10.0.0.1:443 10.0.1.1:8080 0 0 0 200 200 1 1 "GET / HTTP/1.1" "test" - - arn "-" "-" 0 %s' % (event_time_utc, native)
     elif src == "auditd":
         epoch = core.parse_utc(event_time_utc).timestamp()
-        native = "audit(%.3f:%d)" % (epoch, int(stage[-2:]))
+        native = "audit(%.3f:%d)" % (epoch, int(run_digest[:6], 16))
         text = "type=SYSCALL msg=%s arch=c000003e syscall=1 success=yes" % native
     elif src == "nginx_modsecurity":
-        native = "NGINX-REQ-" + stage
+        native = "NGINX-REQ-" + run_digest[:16]
         text = json.dumps({"source": "nginx", "event_time_utc": event_time_utc, "request_id": native}, separators=(",", ":"))
     elif src == "rds_audit":
-        native = "RDS-THREAD-" + stage
+        native = "RDS-THREAD-" + run_digest[:16]
         text = "%s,%s,QUERY,ARGUS-Q01,SELECT synthetic_value" % (event_time_utc, native)
     else:
         native = "NID-" + stage
@@ -192,6 +193,58 @@ class D4LocalEvidenceTests(unittest.TestCase):
             handoffs = [json.loads(x) for x in (directory / "handoffs.jsonl").read_text().splitlines()]
             for record in handoffs:  # detach a token from its issuing stage success token
                 record["predecessor_success_token"] = "f" * 64
+            rewrite_jsonl(directory / "handoffs.jsonl", handoffs)
+            with self.assertRaises(core.D3Error):
+                validator.validate(root, RUN, ROOT)
+
+    def test_forged_terminal_success_token_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, _ = materialize_local(temp, RUN)
+            events = [json.loads(x) for x in (directory / "events.jsonl").read_text().splitlines()]
+            for event in events:
+                if event["stage_id"] == "S10":
+                    event["success_token_value"] = "0" * 64
+            rewrite_jsonl(directory / "events.jsonl", events)
+            with self.assertRaises(core.D3Error):
+                validator.validate(root, RUN, ROOT)
+
+    def test_cross_stage_allowed_action_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, _ = materialize_local(temp, RUN)
+            events = [json.loads(x) for x in (directory / "events.jsonl").read_text().splitlines()]
+            for event in events:
+                if event["stage_id"] == "S05":
+                    event["action"] = "MARKER"  # globally allowed, but only frozen for S04
+            rewrite_jsonl(directory / "events.jsonl", events)
+            with self.assertRaises(core.D3Error):
+                validator.validate(root, RUN, ROOT)
+
+    def test_orphan_handoff_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, _ = materialize_local(temp, RUN)
+            handoffs = [json.loads(x) for x in (directory / "handoffs.jsonl").read_text().splitlines()]
+            orphan = dict(handoffs[0])
+            orphan["handoff_id"] = "11111111-1111-4111-8111-111111111111"
+            handoffs.append(orphan)
+            rewrite_jsonl(directory / "handoffs.jsonl", handoffs)
+            with self.assertRaises(core.D3Error):
+                validator.validate(root, RUN, ROOT)
+
+    def test_handoff_predecessor_kind_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, _ = materialize_local(temp, RUN)
+            handoffs = [json.loads(x) for x in (directory / "handoffs.jsonl").read_text().splitlines()]
+            handoffs[0]["predecessor_success_kind"] = "event_id"
+            rewrite_jsonl(directory / "handoffs.jsonl", handoffs)
+            with self.assertRaises(core.D3Error):
+                validator.validate(root, RUN, ROOT)
+
+    def test_handoff_event_timestamp_detachment_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, directory, _ = materialize_local(temp, RUN)
+            handoffs = [json.loads(x) for x in (directory / "handoffs.jsonl").read_text().splitlines()]
+            handoffs[0]["issued_at_utc"] = "2026-08-26T23:59:59Z"
+            handoffs[0]["not_after_utc"] = "2026-08-27T00:01:59Z"
             rewrite_jsonl(directory / "handoffs.jsonl", handoffs)
             with self.assertRaises(core.D3Error):
                 validator.validate(root, RUN, ROOT)
@@ -395,6 +448,33 @@ class D4BaselineTests(unittest.TestCase):
             manifest = baseline.assemble_baseline(root, self.RUNS, ROOT)
             self.assertTrue(manifest["baseline_established"])
             self.assertEqual(manifest["golden_chain_count"], 3)
+            self.assertEqual([member["run_id"] for member in manifest["golden_chain_members"]], self.RUNS)
+            for member in manifest["golden_chain_members"]:
+                for key in ("run_manifest_sha256", "provenance_sha256", "events_sha256", "handoffs_sha256"):
+                    self.assertRegex(member[key], core.SHA_RE)
+
+    def test_native_record_reused_across_runs_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "evidence"
+            for run_id in self.RUNS:
+                build_golden(root, run_id)
+
+            source_directory = root / self.RUNS[0]
+            target_directory = root / self.RUNS[1]
+            source_events = [json.loads(x) for x in (source_directory / "events.jsonl").read_text().splitlines()]
+            target_events = [json.loads(x) for x in (target_directory / "events.jsonl").read_text().splitlines()]
+            source_record = next(event for event in source_events if event["stage_id"] == "S01")["runtime_sources"][0]
+            target_event = next(event for event in target_events if event["stage_id"] == "S01")
+            target_event["runtime_sources"] = [json.loads(json.dumps(source_record))]
+            target_raw = target_directory / source_record["evidence_path"]
+            target_raw.write_bytes((source_directory / source_record["evidence_path"]).read_bytes())
+            rewrite_jsonl(target_directory / "events.jsonl", target_events)
+
+            # The member still validates alone; only the aggregate independence
+            # rule rejects reusing a source-native record in another run.
+            validator.validate(root, self.RUNS[1], ROOT)
+            with self.assertRaises(core.D3Error):
+                baseline.assemble_baseline(root, self.RUNS, ROOT)
 
     def test_fewer_than_three_rejected(self):
         with tempfile.TemporaryDirectory() as temp:

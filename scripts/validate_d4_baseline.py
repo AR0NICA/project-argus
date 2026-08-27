@@ -26,6 +26,8 @@ def assemble_baseline(evidence_root, run_ids, checkout):
     if len(set(run_ids)) != len(run_ids):
         raise d4.D4Error("R1-BASELINE run ids must be distinct")
     root = Path(evidence_root)
+    native_record_owners = {}
+    members = []
     for run_id in run_ids:
         core.validate_run_id(run_id)
         manifest = d4v.read_json(root / run_id / "run-manifest.json", "run manifest")
@@ -35,11 +37,31 @@ def assemble_baseline(evidence_root, run_ids, checkout):
         d4v.validate(root, run_id, checkout)
         if manifest.get("counts_toward_golden_chain") is not True:
             raise d4.D4Error(run_id + " is not a golden chain")
+        directory = root / run_id
+        events = d4v.read_jsonl(directory / "events.jsonl", "events evidence")
+        for event in events:
+            for source_record in event.get("runtime_sources", []):
+                # A source-local id such as an RDS thread id can legitimately
+                # recur later. Treat the native record as the id + native time
+                # + exported bytes, and reject only reuse of that exact record.
+                identity = (source_record["source"], source_record["native_record_id"], source_record["event_time_utc"], source_record["content_sha256"])
+                owner = native_record_owners.get(identity)
+                if owner is not None and owner != run_id:
+                    raise d4.D4Error("runtime native record reused across baseline runs: %s/%s at %s (%s, %s)" % (identity[0], identity[1], identity[2], owner, run_id))
+                native_record_owners[identity] = run_id
+        members.append({
+            "run_id": run_id,
+            "run_manifest_sha256": d4v.sha_file(directory / "run-manifest.json"),
+            "provenance_sha256": d4v.sha_file(directory / "provenance.json"),
+            "events_sha256": d4v.sha_file(directory / "events.jsonl"),
+            "handoffs_sha256": d4v.sha_file(directory / "handoffs.jsonl"),
+        })
     return {
         "manifest_version": d4.SCHEMA_BASELINE,
         "scenario": d4.SCENARIO,
         "experiment_group": d4.EXPERIMENT_GROUP,
         "golden_chain_runs": list(run_ids),
+        "golden_chain_members": members,
         "golden_chain_count": len(run_ids),
         "minimum_required": d4.MIN_GOLDEN_RUNS,
         "baseline_established": True,

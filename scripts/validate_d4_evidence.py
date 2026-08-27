@@ -43,6 +43,9 @@ def expected_provenance(checkout, run_id):
         "manifest_schema_sha256": sha_file(checkout / "schemas/d4-chain-manifest-v1.json"),
         "d3_core_sha256": sha_file(checkout / "runner/d3_core.py"),
         "d4_core_sha256": sha_file(checkout / "runner/d4_core.py"),
+        "d3_validator_sha256": sha_file(checkout / "scripts/validate_d3_evidence.py"),
+        "d4_validator_sha256": sha_file(checkout / "scripts/validate_d4_evidence.py"),
+        "runtime_collector_sha256": sha_file(checkout / "runner/collect_d4_runtime.py"),
     }
 
 
@@ -113,9 +116,48 @@ def validate_result_guard(event):
     if stage not in ("S09", "S10"):
         return
     guard = event.get("result_guard")
-    if not isinstance(guard, dict) or "row_count" not in guard or "byte_count" not in guard or not core.SHA_RE.fullmatch(guard.get("result_sha256", "")):
+    expected_keys = {"row_count", "byte_count", "result_sha256", "db_query_id"} if stage == "S09" else {"row_count", "byte_count", "result_sha256"}
+    if not isinstance(guard, dict) or set(guard) != expected_keys or not core.SHA_RE.fullmatch(guard.get("result_sha256", "")):
         fail(stage + " is missing a result guard")
+    if stage == "S09" and guard["db_query_id"] != "ARGUS-Q01":
+        fail("S09 result guard is not bound to ARGUS-Q01")
     core.guard_counts(guard["row_count"], guard["byte_count"])
+
+
+def validate_primary_contract(event):
+    """Pin every primary event to its stage authority, not merely to globally
+    allowed values. This prevents a valid action, fixture, or event type from a
+    different stage being substituted into an otherwise well-shaped chain."""
+    stage = event["stage_id"]
+    spec = core.SPEC[stage]
+    expected = {
+        "event_type": spec["event_type"],
+        "result": spec["result"],
+        "action": spec["action"] or "none",
+        "fixture_or_resource_id": spec["fixture"],
+    }
+    for key, value in expected.items():
+        if event.get(key) != value:
+            fail(stage + " " + key + " does not match the frozen stage contract")
+    correlation = {"success_field": spec["success_field"]}
+    if stage == "S09":
+        correlation["db_query_id"] = "ARGUS-Q01"
+    if event.get("correlation") != correlation:
+        fail(stage + " correlation does not match the frozen stage contract")
+
+
+def validate_adapter_contract(adapter, primary_s02):
+    if adapter.get("event_type") != "hybridnb_adapter" or adapter.get("result") != "not_evaluated" or adapter.get("action") != "none":
+        fail("S02 HybridNB adapter identity mismatch")
+    if adapter.get("fixture_or_resource_id") != core.SPEC["S02"]["fixture"] or adapter.get("source_ref") != "argus_web" or adapter.get("target_ref") != "hybridnb_interface":
+        fail("S02 HybridNB adapter source/target/fixture mismatch")
+    if adapter.get("correlation") != core.HYBRIDNB_ADAPTER:
+        fail("S02 HybridNB adapter is not the exact disabled_not_evaluated freeze")
+    for key in ("event_time_utc", "request_id", "content_sha256", "collector", "redaction_status", "success_token_kind", "success_token_value", "handoff_in_id", "counts_toward_golden_chain"):
+        if adapter.get(key) != primary_s02.get(key):
+            fail("S02 HybridNB adapter is detached from its primary event: " + key)
+    if adapter.get("handoff_out_id") is not None:
+        fail("S02 HybridNB adapter must not issue a handoff")
 
 
 def validate_handoff_record(record, run_id):
@@ -133,6 +175,9 @@ def validate_handoff_record(record, run_id):
         fail("the D4 chain forbids harness-injected handoffs")
     if record["issued_by_stage"] not in core.SPEC:
         fail("handoff must be issued by a real stage")
+    issuer = core.HANDOFF_ISSUER.get(record["handoff_kind"])
+    if issuer is None or record["issued_by_stage"] != issuer["stage"] or record["predecessor_success_kind"] != issuer["success_type"]:
+        fail("handoff issuer or predecessor success kind mismatch")
     issued, not_after = core.parse_utc(record["issued_at_utc"]), core.parse_utc(record["not_after_utc"])
     if (not_after - issued).total_seconds() != core.HANDOFF_TTL_SECONDS:
         fail("handoff not_after does not equal issued + TTL")
@@ -145,6 +190,11 @@ def validate_handoff_record(record, run_id):
             fail("handoff consumed outside its validity window")
     elif record["consumed_by_stage"] is not None or record["consumed_at_utc"] is not None:
         fail("unconsumed handoff carries consumption fields")
+    if record["issued_by_stage"] == "S09":
+        if not isinstance(record.get("result_handle"), dict):
+            fail("S09 handoff must carry a result handle")
+    elif "result_handle" in record:
+        fail("only the S09 handoff may carry a result handle")
     core.assert_no_secret(record)
 
 
@@ -191,6 +241,7 @@ def validate(evidence_root, run_id, checkout):
             fail("chain is incomplete: missing stage " + stage)
         if primary[stage]["result"] != core.SPEC[stage]["result"]:
             fail("stage " + stage + " did not reach its frozen success result")
+        validate_primary_contract(primary[stage])
         expected = 2 if stage == "S02" else 1
         if seen_seq.get(stage, 0) != expected:
             fail("stage " + stage + " does not carry the exact contract event count")
@@ -202,9 +253,7 @@ def validate(evidence_root, run_id, checkout):
     adapters = [event for event in events if event["stage_id"] == "S02" and event.get("event_type") == "hybridnb_adapter"]
     if len(adapters) != 1:
         fail("S02 must carry exactly one HybridNB adapter event")
-    correlation = adapters[0].get("correlation")
-    if not isinstance(correlation, dict) or correlation.get("evaluation_status") != "disabled_not_evaluated" or correlation.get("crs_fields_consumed") is not False:
-        fail("S02 HybridNB adapter is not pinned to the disabled_not_evaluated freeze")
+    validate_adapter_contract(adapters[0], primary["S02"])
 
     index = {}
     for record in handoffs:
@@ -213,9 +262,15 @@ def validate(evidence_root, run_id, checkout):
             fail("duplicate handoff id")
         index[record["handoff_id"]] = record
 
+    expected_handoff_ids = {primary[stage]["handoff_out_id"] for stage in d4.FULL_CHAIN if core.SPEC[stage]["handoff_out"]}
+    consumed_handoff_ids = {primary[stage]["handoff_in_id"] for stage in d4.FULL_CHAIN if core.SPEC[stage]["handoff_in"]}
+    if len(handoffs) != len(d4.FULL_CHAIN) - 1 or set(index) != expected_handoff_ids or consumed_handoff_ids != expected_handoff_ids:
+        fail("handoff ledger is not the exact closed S01..S10 chain")
+
     for stage in d4.FULL_CHAIN:
         spec = core.SPEC[stage]
         event = primary[stage]
+        predecessor_token = ""
         if spec["handoff_in"]:
             record = index.get(event["handoff_in_id"])
             if record is None or record["handoff_kind"] != spec["handoff_in"] or not record["consumed"] or record["consumed_by_stage"] != stage:
@@ -225,16 +280,31 @@ def validate(evidence_root, run_id, checkout):
                 fail("stage " + stage + " predecessor was not issued by the real prior stage")
             if issuer_stage not in primary or primary[issuer_stage]["success_token_value"] != record["predecessor_success_token"]:
                 fail("stage " + stage + " predecessor token is not the real prior stage success token")
+            if record["issued_at_utc"] != primary[issuer_stage]["event_time_utc"] or record["consumed_at_utc"] != event["event_time_utc"]:
+                fail("stage " + stage + " handoff timestamps are detached from issuer/consumer events")
+            predecessor_token = record["predecessor_success_token"]
         elif event["handoff_in_id"] is not None:
             fail("stage " + stage + " must not consume a handoff")
+
+        expected_success = core.success_token(run_id, stage, spec["success_field"], spec["fixture"], predecessor_token, spec["success_type"])
+        if event["success_token_value"] != expected_success:
+            fail("stage " + stage + " success token does not re-derive from the frozen causal contract")
+
         if spec["handoff_out"]:
             record = index.get(event["handoff_out_id"])
             if record is None or record["handoff_kind"] != spec["handoff_out"] or record["issued_by_stage"] != stage:
                 fail("stage " + stage + " did not issue its handoff")
             if record["predecessor_success_token"] != event["success_token_value"]:
                 fail("issued handoff is not bound to this stage success token")
-            if stage == "S09" and not isinstance(record.get("result_handle"), dict):
-                fail("S09 handoff must carry a result handle")
+            if record["issued_at_utc"] != event["event_time_utc"]:
+                fail("stage " + stage + " handoff issue time is detached from the issuer event")
+            if stage == "S09":
+                if record["result_handle"] != event.get("result_guard"):
+                    fail("S09 result handle is detached from the S09 result guard")
+                delivered = primary["S10"].get("result_guard")
+                expected_delivered = {key: record["result_handle"][key] for key in ("row_count", "byte_count", "result_sha256")}
+                if delivered != expected_delivered:
+                    fail("S10 result guard is detached from the S09 result handle")
         elif event["handoff_out_id"] is not None:
             fail("stage " + stage + " must not issue a handoff")
 
